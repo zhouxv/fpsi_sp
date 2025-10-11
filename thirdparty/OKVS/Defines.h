@@ -6,7 +6,7 @@
 #include <cryptoTools/Common/Matrix.h>
 #include <cryptoTools/Crypto/PRNG.h>
 
-namespace volePSI {
+namespace Okvs {
 
     using u64 = oc::u64;
     using u32 = oc::u32;
@@ -42,4 +42,4 @@ namespace volePSI {
     using Socket = coproto::Socket;
     using Proto = coproto::task<void>;
 
-} // namespace volePSI
+} // namespace Okvs

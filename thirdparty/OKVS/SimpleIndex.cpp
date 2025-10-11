@@ -11,7 +11,7 @@
 #include <boost/multiprecision/cpp_bin_float.hpp>
 #endif
 
-namespace volePSI {
+namespace Okvs {
 
     void SimpleIndex::print()
     {
@@ -665,4 +665,4 @@ namespace volePSI {
         }
     }
 
-} // namespace volePSI
+} // namespace Okvs

@@ -5,3 +5,7 @@ python3 build.py --install --sudo -DSECUREJOIN_ENABLE_BOOST=ON ## replace the ur
 cd ../../
 mkdir -p build && cd build
 cmake .. && make -j
+
+
+git clone https://github.com/ladnir/volepsi.git
+git checkout 59e06bca81a3287257522cd261bad71e37780642

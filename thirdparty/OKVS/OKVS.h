@@ -8,7 +8,7 @@
 #include "Defines.h"
 #include "Paxos.h"
 using namespace oc;
-using namespace volePSI;
+using namespace Okvs;
 using namespace osuCrypto;
 using namespace std;
 

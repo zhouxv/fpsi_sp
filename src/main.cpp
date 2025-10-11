@@ -1,13 +1,23 @@
 #include <coproto/Socket/AsioSocket.h>
+#include <coproto/Socket/LocalAsyncSock.h>
 #include <cryptoTools/Common/block.h>
 #include <cstddef>
 #include <cstring>
+#include <iostream>
+#include <macoro/sync_wait.h>
 #include <secure-join/Defines.h>
 #include <vector>
+#include "Defines.h"
 #include "OkvrReceiver.h"
 #include "OkvrSender.h"
+#include "SiOPRF.h"
+#include "SoOPPRF.h"
+#include "SoOPRF.h"
 #include "common.h"
 #include "cryptoTools/Common/CLP.h"
+#include "eq.h"
+#include "fmap.h"
+#include "secure-join/Prf/AltModPrf.h"
 #include "secure-join/Prf/AltModPrfProto.h"
 
 using namespace secJoin;
@@ -52,10 +62,10 @@ void AltModWPrf_proto_bench(const oc::CLP &cmd)
     PRNG prng0(oc::ZeroBlock);
     PRNG prng1(oc::OneBlock);
 
-    AltModPrf dm;
+    // AltModPrf dm;
     AltModPrf::KeyType kk;
     kk = prng0.get();
-    dm.setKey(kk);
+    // dm.setKey(kk);
     // sender.setKey(kk);
 
     CorGenerator ole0, ole1;
@@ -63,8 +73,10 @@ void AltModWPrf_proto_bench(const oc::CLP &cmd)
     ole1.init(sock2[1].fork(), prng1, 1, nt, 1 << 18, cmd.getOr("mock", 1));
 
     prng0.get(x.data(), x.size());
+
     std::vector<oc::block> rk(AltModPrf::KeySize);
     std::vector<std::array<oc::block, 2>> sk(AltModPrf::KeySize);
+
     for (u64 i = 0; i < AltModPrf::KeySize; ++i) {
         sk[i][0] = oc::block(i, 0);
         sk[i][1] = oc::block(i, 1);
@@ -195,6 +207,83 @@ void AltModWPrf_proto_test(const oc::CLP &cmd)
     AltModPrf prf(sender.getKey());
     std::vector<block> y(x.size());
     prf.eval(x, y);
+    for (u64 ii = 0; ii < n; ++ii) {
+        auto yy = (y0[ii] ^ y1[ii]);
+        if (yy != y[ii]) {
+            std::cout << "i   " << ii << std::endl;
+            std::cout << "act " << yy << std::endl;
+            std::cout << "exp " << y[ii] << std::endl;
+            throw RTE_LOC;
+        }
+    }
+}
+
+void AltModWPrf_shared_test()
+{
+    u64 n = 1 << 10;
+
+    PRNG prng0(block(0, 0));
+    PRNG prng1(block(0, 1));
+
+    AltModWPrfSender sender;
+    AltModWPrfReceiver recver;
+
+    std::vector<oc::block> x(n);
+    std::vector<oc::block> y0(n), y1(n);
+
+    auto sock = coproto::LocalAsyncSocket::makePair();
+    auto sock2 = coproto::LocalAsyncSocket::makePair();
+
+    AltModPrf dm_(prng0.get());
+    AltModPrf::KeyType k = dm_.mExpandedKey;
+    AltModPrf::KeyType k1 = prng0.get();
+    AltModPrf::KeyType k0 = k1 ^ k;
+
+    oc::AlignedUnVector<block> x0(n), x1(n);
+    CorGenerator ole0, ole1;
+    ole0.init(std::move(sock2[0]), prng0, 0, 1, 1 << 10, 1);
+    ole1.init(std::move(sock2[1]), prng1, 1, 1, 1 << 10, 1);
+
+    prng0.get(x.data(), x.size());
+    prng0.get(x0.data(), x0.size());
+    for (u64 i = 0; i < n; ++i) {
+        x1[i] = x[i] ^ x0[i];
+    }
+
+    std::vector<oc::block> rk0(AltModPrf::KeySize), rk1(AltModPrf::KeySize);
+    std::vector<std::array<oc::block, 2>> sk0(AltModPrf::KeySize), sk1(AltModPrf::KeySize);
+    for (u64 i = 0; i < AltModPrf::KeySize; ++i) {
+        sk1[i][0] = oc::block(i, 0);
+        sk1[i][1] = oc::block(i, 1);
+        rk1[i] = oc::block(i, *oc::BitIterator((u8 *)&k1, i));
+        sk0[i][0] = oc::block(i, 0);
+        sk0[i][1] = oc::block(i, 1);
+        rk0[i] = oc::block(i, *oc::BitIterator((u8 *)&k0, i));
+    }
+
+    sender.init(n, ole0, AltModPrfKeyMode::Shared, AltModPrfInputMode::Shared, k1, rk1, sk0);
+
+    recver.init(n, ole1, AltModPrfKeyMode::Shared, AltModPrfInputMode::Shared, k0, sk1, rk0);
+
+    std::thread th_sender([&] {
+        auto r = coproto::sync_wait(coproto::when_all_ready(sender.evaluate(x0, y0, sock[0], prng0), ole0.start()));
+        std::get<0>(r).result();
+        std::get<1>(r).result();
+    });
+
+    std::thread th_recver([&] {
+        auto r = coproto::sync_wait(coproto::when_all_ready(recver.evaluate(x1, y1, sock[1], prng1), ole1.start()));
+        std::get<0>(r).result();
+        std::get<1>(r).result();
+    });
+
+    th_sender.join();
+    th_recver.join();
+
+    std::cout << sock[0].bytesReceived() / 1000.0 << " " << sock[0].bytesSent() / 1000.0 << " kB " << std::endl;
+
+    std::vector<block> y(x.size());
+    dm_.eval(x, y);
     for (u64 ii = 0; ii < n; ++ii) {
         auto yy = (y0[ii] ^ y1[ii]);
         if (yy != y[ii]) {
@@ -359,6 +448,171 @@ void sim_okvr()
     memcmp(values.data(), val.data(), decode_size * sizeof(block)) == 0 ? std::cout << "ok\n" : std::cout << "error\n";
 }
 
+void SoOPRF_test()
+{
+    auto sock0 = coproto::AsioSocket::makePair();
+
+    SoOPRFSender sender(1 << 10, 1, false, &sock0[0]);
+    SoOPRFRecver recver(1 << 10, 1, false, &sock0[1]);
+
+    sender.setup();
+    recver.setup();
+
+    PRNG prng(oc::ZeroBlock);
+    std::vector<oc::block> x(1 << 10);
+    std::vector<oc::block> y0(1 << 10), y1(1 << 10);
+    prng.get(x.data(), x.size());
+
+    std::thread thread_sender([&] { sender.OPRF(y0); });
+
+    std::thread thread_recver([&] { recver.OPRF(x, y1); });
+
+    thread_sender.join();
+    thread_recver.join();
+
+    std::cout << sender.getKey() << std::endl;
+
+    AltModPrf prf(sender.getKey());
+    std::vector<block> y(x.size());
+    prf.eval(x, y);
+    for (u64 ii = 0; ii < x.size(); ++ii) {
+        auto yy = (y0[ii] ^ y1[ii]);
+        if (yy != y[ii]) {
+            std::cout << "i   " << ii << std::endl;
+            std::cout << "act " << yy << std::endl;
+            std::cout << "exp " << y[ii] << std::endl;
+            throw RTE_LOC;
+        }
+    }
+
+    std::cout << "All Pass!" << std::endl;
+}
+
+void SoOPPRF_test()
+{
+    auto sock0 = coproto::AsioSocket::makePair();
+
+    SoOPPRFSender sender(1 << 20, 1, false, &sock0[0]);
+    SoOPPRFRecver recver(1 << 20, 1, false, &sock0[1]);
+
+    PRNG prng(oc::ZeroBlock);
+    std::vector<oc::block> keys0(1 << 20);
+    std::vector<oc::block> vals0(1 << 20);
+    std::vector<oc::block> keys1(1 << 20);
+    std::vector<oc::block> y0(1 << 20), y1(1 << 20);
+
+    prng.get<oc::block>(keys0);
+    prng.get<oc::block>(vals0);
+    memcpy(keys1.data(), keys0.data(), keys0.size() * sizeof(block));
+
+    std::thread thread_sender([&] { sender.OPPRF(keys0, vals0, y0); });
+
+    std::thread thread_recver([&] { recver.OPPRF(keys1, y1); });
+
+    thread_sender.join();
+    thread_recver.join();
+
+    for (int i = 0; i < (1 << 20); i++) {
+        if ((y0[i] ^ y1[i]) != vals0[i]) {
+            std::cout << "i   " << i << std::endl;
+            std::cout << "act " << (y0[i] ^ y1[i]) << std::endl;
+            std::cout << "exp " << vals0[i] << std::endl;
+            throw RTE_LOC;
+        }
+    }
+
+    std::cout << "All Pass!" << std::endl;
+}
+
+void SiOPRF_test()
+{
+    size_t n = 1 << 10;
+
+    auto sock = coproto::LocalAsyncSocket::makePair();
+    auto sock2 = coproto::LocalAsyncSocket::makePair();
+
+    PRNG prng(oc::ZeroBlock);
+    std::vector<oc::block> x(n), x0(n), x1(n);
+    std::vector<oc::block> y0(n), y1(n);
+
+    AltModPrf dm(prng.get());
+
+    AltModPrf::KeyType k = dm.mExpandedKey;
+    AltModPrf::KeyType k1 = prng.get();
+    AltModPrf::KeyType k0 = k1 ^ k;
+
+    prng.get(x.data(), x.size());
+    prng.get(x0.data(), x0.size());
+
+    for (u64 i = 0; i < n; ++i) {
+        x1[i] = x[i] ^ x0[i];
+    }
+
+    // sender.setup();
+    // recver.setup();
+
+    std::thread thread_sender([&] {
+        SiOPRFSender sender(1 << 10, 1, false, &sock[0], &sock2[0], k0);
+        sender.OPRF(x0, y0);
+    });
+
+    std::thread thread_recver([&] {
+        SiOPRFRecver recver(1 << 10, 1, false, &sock[1], &sock2[1], k1);
+        recver.OPRF(x1, y1);
+    });
+
+    thread_sender.join();
+    thread_recver.join();
+
+    std::vector<block> y(x.size());
+    dm.eval(x, y);
+    for (u64 ii = 0; ii < x.size(); ++ii) {
+        auto yy = (y0[ii] ^ y1[ii]);
+        if (yy != y[ii]) {
+            std::cout << "i   " << ii << std::endl;
+            std::cout << "act " << yy << std::endl;
+            std::cout << "exp " << y[ii] << std::endl;
+            throw RTE_LOC;
+        }
+    }
+
+    std::cout << "All Pass!" << std::endl;
+}
+
+void eq_test()
+{
+    auto sock = coproto::AsioSocket::makePair();
+
+    PEqTSender sender(1 << 10, 1, false, &sock[0]);
+    PEqTRecver recver(1 << 10, 1, false, &sock[1]);
+
+    PRNG prng(oc::ZeroBlock);
+    std::vector<oc::block> sendSet(1 << 10);
+    std::vector<oc::block> recvSet(1 << 10);
+    prng.get(sendSet.data(), sendSet.size());
+    prng.get(recvSet.data(), recvSet.size());
+
+    for (int i = 0; i < 10; i++) {
+        recvSet[i] = sendSet[i];
+    }
+
+    std::vector<u64> intersection;
+
+    std::thread thread_sender([&] { sender.eq(sendSet); });
+
+    std::thread thread_recver([&] { recver.eq(recvSet, intersection); });
+
+    thread_sender.join();
+    thread_recver.join();
+
+    for (auto e : intersection) {
+        cout << e << " ";
+    }
+    std::cout << std::endl;
+
+    std::cout << "All Pass!" << std::endl;
+}
+
 int main(int argc, char **argv)
 {
     // oc::CLP cmd(argc, argv);
@@ -369,7 +623,32 @@ int main(int argc, char **argv)
 
     // simulation_2pc();
 
-    sim_okvr();
+    // sim_okvr();
+
+    // SoOPRF_test();
+
+    // SoOPPRF_test();
+
+    // SiOPRF_test();
+
+    // AltModWPrf_shared_test();
+
+    // eq_test();
+
+    std::vector<std::vector<u64>> inputs;
+    std::vector<block> pid;
+    std::vector<block> list_key;
+    std::vector<block> list_val;
+
+    for (u64 i = 0; i < (1 << 10); i++) {
+        std::vector<u64> tmp;
+        for (u64 j = 0; j < 8; j++) {
+            tmp.push_back(i + j);
+        }
+        inputs.push_back(tmp);
+    }
+
+    LocalMap(inputs, pid, list_key, list_val, 8);
 
     return 0;
 }

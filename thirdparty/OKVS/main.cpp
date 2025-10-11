@@ -10,7 +10,7 @@
 #include "Paxos.h"
 #include "PaxosImpl.h"
 using namespace oc;
-using namespace volePSI;
+using namespace Okvs;
 using namespace osuCrypto;
 using namespace std;
 

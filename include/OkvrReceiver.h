@@ -1,3 +1,5 @@
+#pragma once
+
 #include <cryptoTools/Common/block.h>
 #include <vector>
 #include "OKVS.h"

@@ -4,7 +4,6 @@
 
 OKVS::OKVS(u64 numItems, u64 weight_, u64 ssp, u64 binSize_)
 {
-    Baxos paxos;
     paxos.init(numItems, binSize_, weight_, ssp, PaxosParam::GF128, oc::ZeroBlock);
     param = paxos.mPaxosParam;
 }

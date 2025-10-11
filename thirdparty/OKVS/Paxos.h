@@ -15,7 +15,7 @@
 #include "Defines.h"
 #include "PxUtil.h"
 
-namespace volePSI {
+namespace Okvs {
     struct PaxosParam {
         // the type of dense columns.
         enum DenseType { Binary, GF128 };
@@ -463,7 +463,7 @@ namespace volePSI {
     // template<typename IdxType>
     // std::ostream& operator<<(std::ostream& o, const PaxosDiff<IdxType>& s);
 
-} // namespace volePSI
+} // namespace Okvs
 
 // Since paxos is a template, we include the impl file.
 #ifndef NO_INCLUDE_PAXOS_IMPL

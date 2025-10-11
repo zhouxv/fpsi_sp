@@ -15,7 +15,7 @@
 #include "cryptoTools/Common/BitVector.h"
 #include "cryptoTools/Common/Defines.h"
 #include "cryptoTools/Common/Matrix.h"
-namespace volePSI {
+namespace Okvs {
 
     class SimpleIndex {
     public:
@@ -93,4 +93,4 @@ namespace volePSI {
         void insertItems(span<block> items, block hashingSeed);
     };
 
-} // namespace volePSI
+} // namespace Okvs

@@ -13,7 +13,7 @@
 
 #include "libdivide.h"
 
-namespace volePSI {
+namespace Okvs {
 
     // A permutation (and its inverse) over the set [n].
     template <typename IdxType>
@@ -769,4 +769,4 @@ namespace volePSI {
         }
     };
 
-} // namespace volePSI
+} // namespace Okvs

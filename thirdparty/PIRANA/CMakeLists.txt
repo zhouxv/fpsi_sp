@@ -43,7 +43,7 @@ find_package(libOTe REQUIRED)
 # set_target_properties(pirexamples  PROPERTIES
 # RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/../bin)
 
-add_library(pirana STATIC
+add_library(pirana SHARED 
     ${CMAKE_CURRENT_LIST_DIR}/src/utils.cc
     ${CMAKE_CURRENT_LIST_DIR}/src/pir_parms.cc
     ${CMAKE_CURRENT_LIST_DIR}/src/server.cc

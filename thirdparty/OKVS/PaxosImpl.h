@@ -10,7 +10,7 @@
 #include "Paxos.h"
 #include "SimpleIndex.h"
 
-namespace volePSI {
+namespace Okvs {
 
     using AES = oc::AES;
     using PRNG = oc::PRNG;
@@ -2728,6 +2728,101 @@ namespace volePSI {
         }
     }
 
+    // template <typename IdxType, typename Vec, typename ConstVec, typename Helper>
+    // void Baxos::implDecodeBatch(span<const block> inputs, Vec &values, ConstVec &pp, Helper &h)
+    // {
+    //     u64 decodeSize = std::min<u64>(512, inputs.size());
+    //     Matrix<block> batches(mNumBins, decodeSize);
+    //     Matrix<u64> inIdxs(mNumBins, decodeSize);
+    //     std::vector<u64> batchSizes(mNumBins);
+
+    //     AES hasher(mSeed);
+    //     auto inIter = inputs.data();
+    //     Paxos<IdxType> paxos;
+    //     auto sizePer = size() / mNumBins;
+    //     paxos.init(1, mPaxosParam, mSeed);
+    //     auto buff = h.newVec(32);
+
+    //     // Matrix<IdxType> rows(8, mWeight);
+    //     static const u32 batchSize = 32;
+    //     auto main = inputs.size() / batchSize * batchSize;
+    //     std::array<block, batchSize> buffer;
+    //     std::array<u64, batchSize> binIdxs;
+    //     // std::vector<u64> dense(8);
+
+    //     // libdivide::libdivide_u64_t divider = libdivide::libdivide_u64_gen(mNumBins);
+
+    //     // iterate over the input
+    //     // for (; i < main; i += batchSize, inIter += batchSize) {
+    //     //     hasher.hashBlocks<8>(inIter, buffer.data());
+    //     //     hasher.hashBlocks<8>(inIter + 8, buffer.data() + 8);
+    //     //     hasher.hashBlocks<8>(inIter + 16, buffer.data() + 16);
+    //     //     hasher.hashBlocks<8>(inIter + 24, buffer.data() + 24);
+
+    //     //     for (u64 j = 0; j < batchSize; j += 8) {
+    //     //         binIdxs[j + 0] = binIdxCompress(buffer[j + 0]);
+    //     //         binIdxs[j + 1] = binIdxCompress(buffer[j + 1]);
+    //     //         binIdxs[j + 2] = binIdxCompress(buffer[j + 2]);
+    //     //         binIdxs[j + 3] = binIdxCompress(buffer[j + 3]);
+    //     //         binIdxs[j + 4] = binIdxCompress(buffer[j + 4]);
+    //     //         binIdxs[j + 5] = binIdxCompress(buffer[j + 5]);
+    //     //         binIdxs[j + 6] = binIdxCompress(buffer[j + 6]);
+    //     //         binIdxs[j + 7] = binIdxCompress(buffer[j + 7]);
+    //     //     }
+
+    //     //     doMod32(binIdxs.data(), &divider, mNumBins);
+
+    //     //     for (u64 k = 0; k < batchSize; ++k) {
+    //     //         auto binIdx = binIdxs[k];
+
+    //     //         batches(binIdx, batchSizes[binIdx]) = buffer[k];
+    //     //         inIdxs(binIdx, batchSizes[binIdx]) = i + k;
+    //     //         ++batchSizes[binIdx];
+
+    //     //         if (batchSizes[binIdx] == decodeSize) {
+    //     //             auto p = pp.subspan(binIdx * sizePer, sizePer);
+    //     //             auto idxs = inIdxs[binIdx];
+
+    //     //             implDecodeBin(binIdx, batches[binIdx], values, buff, idxs, p, h, paxos);
+
+    //     //             batchSizes[binIdx] = 0;
+    //     //         }
+    //     //     }
+    //     // }
+
+    //     for (u64 i = 0; i < inputs.size(); ++i, ++inIter) {
+    //         buffer[i] = hasher.hashBlock(*inIter);
+
+    //         // auto binIdx = buffer[k].as<u64>()[0] % mNumBins;
+    //         auto binIdx = modNumBins(buffer[i]);
+
+    //         batches(binIdx, batchSizes[binIdx]) = buffer[i];
+    //         inIdxs(binIdx, batchSizes[binIdx]) = i;
+    //         ++batchSizes[binIdx];
+
+    //         // if (i + k == 557)
+    //         //{
+    //         //     std::cout << "decode * " << binIdx << std::endl;
+    //         // }
+
+    //         // if (batchSizes[binIdx] == decodeSize) {
+    //         //     auto p_segment = pp.subspan(binIdx * sizePer, sizePer);
+
+    //         //     implDecodeBin(binIdx, batches[binIdx], values, buff, inIdxs[binIdx], p_segment, h, paxos);
+
+    //         //     batchSizes[binIdx] = 0;
+    //         // }
+    //     }
+
+    //     for (u64 binIdx = 0; binIdx < mNumBins; ++binIdx) {
+    //         if (batchSizes[binIdx]) {
+    //             auto p_for_binIdx = pp.subspan(binIdx * sizePer, sizePer);
+    //             auto hash_of_binIdx = batches[binIdx].subspan(0, batchSizes[binIdx]);
+    //             implDecodeBin(binIdx, hash_of_binIdx, values, buff, inIdxs[binIdx], p_for_binIdx, h, paxos);
+    //         }
+    //     }
+    // }
+
     template <typename IdxType, typename Vec, typename ConstVec, typename Helper>
     void Baxos::implDecodeBatch(span<const block> inputs, Vec &values, ConstVec &pp, Helper &h)
     {
@@ -2749,55 +2844,55 @@ namespace volePSI {
         std::array<block, batchSize> buffer;
         std::array<u64, batchSize> binIdxs;
         // std::vector<u64> dense(8);
-
-        // libdivide::libdivide_u64_t divider = libdivide::libdivide_u64_gen(mNumBins);
+        u64 i = 0;
+        libdivide::libdivide_u64_t divider = libdivide::libdivide_u64_gen(mNumBins);
 
         // iterate over the input
-        // for (; i < main; i += batchSize, inIter += batchSize) {
-        //     hasher.hashBlocks<8>(inIter, buffer.data());
-        //     hasher.hashBlocks<8>(inIter + 8, buffer.data() + 8);
-        //     hasher.hashBlocks<8>(inIter + 16, buffer.data() + 16);
-        //     hasher.hashBlocks<8>(inIter + 24, buffer.data() + 24);
+        for (; i < main; i += batchSize, inIter += batchSize) {
+            hasher.hashBlocks<8>(inIter, buffer.data());
+            hasher.hashBlocks<8>(inIter + 8, buffer.data() + 8);
+            hasher.hashBlocks<8>(inIter + 16, buffer.data() + 16);
+            hasher.hashBlocks<8>(inIter + 24, buffer.data() + 24);
 
-        //     for (u64 j = 0; j < batchSize; j += 8) {
-        //         binIdxs[j + 0] = binIdxCompress(buffer[j + 0]);
-        //         binIdxs[j + 1] = binIdxCompress(buffer[j + 1]);
-        //         binIdxs[j + 2] = binIdxCompress(buffer[j + 2]);
-        //         binIdxs[j + 3] = binIdxCompress(buffer[j + 3]);
-        //         binIdxs[j + 4] = binIdxCompress(buffer[j + 4]);
-        //         binIdxs[j + 5] = binIdxCompress(buffer[j + 5]);
-        //         binIdxs[j + 6] = binIdxCompress(buffer[j + 6]);
-        //         binIdxs[j + 7] = binIdxCompress(buffer[j + 7]);
-        //     }
+            for (u64 j = 0; j < batchSize; j += 8) {
+                binIdxs[j + 0] = binIdxCompress(buffer[j + 0]);
+                binIdxs[j + 1] = binIdxCompress(buffer[j + 1]);
+                binIdxs[j + 2] = binIdxCompress(buffer[j + 2]);
+                binIdxs[j + 3] = binIdxCompress(buffer[j + 3]);
+                binIdxs[j + 4] = binIdxCompress(buffer[j + 4]);
+                binIdxs[j + 5] = binIdxCompress(buffer[j + 5]);
+                binIdxs[j + 6] = binIdxCompress(buffer[j + 6]);
+                binIdxs[j + 7] = binIdxCompress(buffer[j + 7]);
+            }
 
-        //     doMod32(binIdxs.data(), &divider, mNumBins);
+            doMod32(binIdxs.data(), &divider, mNumBins);
 
-        //     for (u64 k = 0; k < batchSize; ++k) {
-        //         auto binIdx = binIdxs[k];
+            for (u64 k = 0; k < batchSize; ++k) {
+                auto binIdx = binIdxs[k];
 
-        //         batches(binIdx, batchSizes[binIdx]) = buffer[k];
-        //         inIdxs(binIdx, batchSizes[binIdx]) = i + k;
-        //         ++batchSizes[binIdx];
+                batches(binIdx, batchSizes[binIdx]) = buffer[k];
+                inIdxs(binIdx, batchSizes[binIdx]) = i + k;
+                ++batchSizes[binIdx];
 
-        //         if (batchSizes[binIdx] == decodeSize) {
-        //             auto p = pp.subspan(binIdx * sizePer, sizePer);
-        //             auto idxs = inIdxs[binIdx];
+                if (batchSizes[binIdx] == decodeSize) {
+                    auto p = pp.subspan(binIdx * sizePer, sizePer);
+                    auto idxs = inIdxs[binIdx];
+                    implDecodeBin(binIdx, batches[binIdx], values, buff, idxs, p, h, paxos);
 
-        //             implDecodeBin(binIdx, batches[binIdx], values, buff, idxs, p, h, paxos);
+                    batchSizes[binIdx] = 0;
+                }
+            }
+        }
 
-        //             batchSizes[binIdx] = 0;
-        //         }
-        //     }
-        // }
-
-        for (u64 i = 0; i < inputs.size(); ++i, ++inIter) {
-            buffer[i] = hasher.hashBlock(*inIter);
+        for (; i < inputs.size(); ++i, ++inIter) {
+            auto k = 0;
+            buffer[k] = hasher.hashBlock(*inIter);
 
             // auto binIdx = buffer[k].as<u64>()[0] % mNumBins;
-            auto binIdx = modNumBins(buffer[i]);
+            auto binIdx = modNumBins(buffer[k]);
 
-            batches(binIdx, batchSizes[binIdx]) = buffer[i];
-            inIdxs(binIdx, batchSizes[binIdx]) = i;
+            batches(binIdx, batchSizes[binIdx]) = buffer[k];
+            inIdxs(binIdx, batchSizes[binIdx]) = i + k;
             ++batchSizes[binIdx];
 
             // if (i + k == 557)
@@ -2805,20 +2900,19 @@ namespace volePSI {
             //     std::cout << "decode * " << binIdx << std::endl;
             // }
 
-            // if (batchSizes[binIdx] == decodeSize) {
-            //     auto p_segment = pp.subspan(binIdx * sizePer, sizePer);
+            if (batchSizes[binIdx] == decodeSize) {
+                auto p = pp.subspan(binIdx * sizePer, sizePer);
+                implDecodeBin(binIdx, batches[binIdx], values, buff, inIdxs[binIdx], p, h, paxos);
 
-            //     implDecodeBin(binIdx, batches[binIdx], values, buff, inIdxs[binIdx], p_segment, h, paxos);
-
-            //     batchSizes[binIdx] = 0;
-            // }
+                batchSizes[binIdx] = 0;
+            }
         }
 
         for (u64 binIdx = 0; binIdx < mNumBins; ++binIdx) {
             if (batchSizes[binIdx]) {
-                auto p_for_binIdx = pp.subspan(binIdx * sizePer, sizePer);
-                auto hash_of_binIdx = batches[binIdx].subspan(0, batchSizes[binIdx]);
-                implDecodeBin(binIdx, hash_of_binIdx, values, buff, inIdxs[binIdx], p_for_binIdx, h, paxos);
+                auto p = pp.subspan(binIdx * sizePer, sizePer);
+                auto b = batches[binIdx].subspan(0, batchSizes[binIdx]);
+                implDecodeBin(binIdx, b, values, buff, inIdxs[binIdx], p, h, paxos);
             }
         }
     }
@@ -3003,4 +3097,4 @@ namespace volePSI {
             thrds[i].join();
     }
 
-} // namespace volePSI
+} // namespace Okvs
