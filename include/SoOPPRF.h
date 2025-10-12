@@ -1,11 +1,12 @@
 #pragma once
 
+#include <cstdint>
 #include "OKVS.h"
 #include "SoOPRF.h"
 
 class SoOPPRFSender : public SoOPRFSender {
 public:
-    SoOPPRFSender(uint64_t num_, uint64_t numThreads_, bool useOle_, coproto::AsioSocket *socket_);
+    SoOPPRFSender(uint64_t num_, uint64_t num_kv_, uint64_t numThreads_, bool useOle_, coproto::Socket *socket_);
     ~SoOPPRFSender();
 
     void OPPRF(std::vector<oc::block> &keys, std::vector<oc::block> &values, std::vector<oc::block> &y0);
@@ -16,7 +17,7 @@ private:
 
 class SoOPPRFRecver : public SoOPRFRecver {
 public:
-    SoOPPRFRecver(uint64_t num_, uint64_t numThreads_, bool useOle_, coproto::AsioSocket *socket_);
+    SoOPPRFRecver(uint64_t num_, uint64_t num_kv_, uint64_t numThreads_, bool useOle_, coproto::Socket *socket_);
     ~SoOPPRFRecver();
 
     void OPPRF(std::vector<oc::block> &keys, std::vector<oc::block> &y1);

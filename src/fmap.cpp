@@ -1,10 +1,9 @@
 #include "fmap.h"
-#include <cstddef>
 #include <map>
 #include "Defines.h"
 
 // to be fixed
-void LocalMap(std::vector<std::vector<u64>> &inputs, std::vector<block> &pid, std::vector<block> &list_key, std::vector<block> &list_val, int delta)
+void LocalMap(std::vector<std::vector<u64>> &inputs, std::vector<block> &pid, std::vector<block> &listKey, std::vector<block> &listVal, int delta)
 {
     PRNG prng(ZeroBlock);
 
@@ -26,12 +25,12 @@ void LocalMap(std::vector<std::vector<u64>> &inputs, std::vector<block> &pid, st
             }
         }
         for (auto &kv : mp_d) {
-            list_key.push_back(kv.first);
-            list_val.push_back(kv.second);
+            listKey.push_back(kv.first);
+            listVal.push_back(kv.second);
         }
     }
-    while (list_key.size() < (2 * delta + 1) * d * m) {
-        list_key.push_back(prng.get<block>());
-        list_val.push_back(prng.get<block>());
+    while (listKey.size() < (2 * delta + 1) * d * m) {
+        listKey.push_back(prng.get<block>());
+        listVal.push_back(prng.get<block>());
     }
 }

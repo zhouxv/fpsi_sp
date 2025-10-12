@@ -3,7 +3,7 @@
 #include <coproto/Socket/AsioSocket.h>
 #include <macoro/start_on.h>
 
-SoOPRFSender::SoOPRFSender(uint64_t num_, uint64_t numThreads_, bool useOle_, coproto::AsioSocket *socket_)
+SoOPRFSender::SoOPRFSender(uint64_t num_, uint64_t numThreads_, bool useOle_, coproto::Socket *socket_)
     : num(num_), numThreads(numThreads_), useOle(useOle_), socket(socket_)
 {
     sender = new AltModWPrfSender();
@@ -52,7 +52,7 @@ SoOPRFSender::~SoOPRFSender()
     delete ole;
 }
 
-SoOPRFRecver::SoOPRFRecver(uint64_t num_, uint64_t numThreads_, bool useOle_, coproto::AsioSocket *socket_)
+SoOPRFRecver::SoOPRFRecver(uint64_t num_, uint64_t numThreads_, bool useOle_, coproto::Socket *socket_)
     : num(num_), numThreads(numThreads_), useOle(useOle_), socket(socket_)
 {
     recver = new AltModWPrfReceiver();

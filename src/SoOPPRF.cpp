@@ -2,10 +2,10 @@
 #include <coproto/Common/macoro.h>
 #include "SoOPRF.h"
 
-SoOPPRFSender::SoOPPRFSender(uint64_t num_, uint64_t numThreads_, bool useOle_, coproto::AsioSocket *socket_)
+SoOPPRFSender::SoOPPRFSender(uint64_t num_, uint64_t num_kv_, uint64_t numThreads_, bool useOle_, coproto::Socket *socket_)
     : SoOPRFSender(num_, numThreads_, useOle_, socket_)
 {
-    okvs = new OKVS(num);
+    okvs = new OKVS(num_kv_);
 }
 
 SoOPPRFSender::~SoOPPRFSender()
@@ -15,9 +15,6 @@ SoOPPRFSender::~SoOPPRFSender()
 
 void SoOPPRFSender::OPPRF(std::vector<oc::block> &keys, std::vector<oc::block> &values, std::vector<oc::block> &y0)
 {
-    if (keys.size() != num || values.size() != num)
-        throw std::runtime_error("input size not equal to num");
-
     SoOPRFSender::OPRF(y0);
 
     std::vector<oc::block> values_masked(values);
@@ -35,10 +32,10 @@ void SoOPPRFSender::OPPRF(std::vector<oc::block> &keys, std::vector<oc::block> &
     coproto::sync_wait(socket->send(encoding));
 }
 
-SoOPPRFRecver::SoOPPRFRecver(uint64_t num_, uint64_t numThreads_, bool useOle_, coproto::AsioSocket *socket_)
+SoOPPRFRecver::SoOPPRFRecver(uint64_t num_, uint64_t num_kv_, uint64_t numThreads_, bool useOle_, coproto::Socket *socket_)
     : SoOPRFRecver(num_, numThreads_, useOle_, socket_)
 {
-    okvs = new OKVS(num);
+    okvs = new OKVS(num_kv_);
 }
 
 SoOPPRFRecver::~SoOPPRFRecver()
@@ -51,8 +48,6 @@ void SoOPPRFRecver::OPPRF(std::vector<oc::block> &keys, std::vector<oc::block> &
     std::vector<oc::block> tmp(keys.size());
 
     SoOPRFRecver::OPRF(keys, tmp);
-
-    std::vector<oc::block> y0(num);
 
     std::vector<oc::block> encoding(okvs->size());
 

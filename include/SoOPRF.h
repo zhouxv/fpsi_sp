@@ -11,7 +11,7 @@ using namespace secJoin;
 // so-OPRF with input \mathbb{F}_3 and output \mathbb{F}_2
 class SoOPRFSender {
 public:
-    SoOPRFSender(uint64_t num_, uint64_t numThreads_, bool useOle_, coproto::AsioSocket *socket_);
+    SoOPRFSender(uint64_t num_, uint64_t numThreads_, bool useOle_, coproto::Socket *socket_);
     ~SoOPRFSender();
 
     void setup();
@@ -25,7 +25,7 @@ public:
     uint64_t num;
     uint64_t numThreads;
     bool useOle;
-    coproto::AsioSocket *socket;
+    coproto::Socket *socket;
     PRNG *prng;
 
 private:
@@ -36,7 +36,7 @@ private:
 
 class SoOPRFRecver {
 public:
-    SoOPRFRecver(uint64_t num_, uint64_t numThreads_, bool useOle_, coproto::AsioSocket *socket_);
+    SoOPRFRecver(uint64_t num_, uint64_t numThreads_, bool useOle_, coproto::Socket *socket_);
     ~SoOPRFRecver();
 
     void setup();
@@ -45,7 +45,7 @@ public:
     uint64_t num;
     uint64_t numThreads;
     bool useOle;
-    coproto::AsioSocket *socket;
+    coproto::Socket *socket;
     PRNG *prng;
 
 private:

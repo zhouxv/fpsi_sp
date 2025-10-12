@@ -492,8 +492,8 @@ void SoOPPRF_test()
 {
     auto sock0 = coproto::AsioSocket::makePair();
 
-    SoOPPRFSender sender(1 << 20, 1, false, &sock0[0]);
-    SoOPPRFRecver recver(1 << 20, 1, false, &sock0[1]);
+    SoOPPRFSender sender(1 << 20, 1 << 20, 1, false, &sock0[0]);
+    SoOPPRFRecver recver(1 << 20, 1 << 20, 1, false, &sock0[1]);
 
     PRNG prng(oc::ZeroBlock);
     std::vector<oc::block> keys0(1 << 20);
@@ -615,7 +615,7 @@ void eq_test()
 
 int main(int argc, char **argv)
 {
-    // oc::CLP cmd(argc, argv);
+    oc::CLP cmd(argc, argv);
 
     // AltModWPrf_proto_bench(cmd);
 
@@ -635,20 +635,7 @@ int main(int argc, char **argv)
 
     // eq_test();
 
-    std::vector<std::vector<u64>> inputs;
-    std::vector<block> pid;
-    std::vector<block> list_key;
-    std::vector<block> list_val;
-
-    for (u64 i = 0; i < (1 << 10); i++) {
-        std::vector<u64> tmp;
-        for (u64 j = 0; j < 8; j++) {
-            tmp.push_back(i + j);
-        }
-        inputs.push_back(tmp);
-    }
-
-    LocalMap(inputs, pid, list_key, list_val, 8);
+    Fmap(cmd);
 
     return 0;
 }
