@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-set(CMAKE_BUILD_TYPE RelWithDebInfo)
+set(CMAKE_BUILD_TYPE Release)
 
 include_directories(include)
 
@@ -42,3 +42,5 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build)
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i.86")
   target_compile_options(fpsi PRIVATE -mpclmul -maes -msse2 -msse4.1)
 endif()
+
+add_definitions(-DNDEBUG)

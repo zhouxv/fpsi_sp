@@ -11,6 +11,8 @@ public:
 
     void OPPRF(std::vector<oc::block> &keys, std::vector<oc::block> &values, std::vector<oc::block> &y0);
 
+    void OPPRF(std::vector<oc::block> encoding, std::vector<oc::block> &y0);
+
 private:
     OKVS *okvs;
 };

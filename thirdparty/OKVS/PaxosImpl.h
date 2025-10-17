@@ -2292,7 +2292,6 @@ namespace Okvs {
     {
         // select the smallest index type which will work.
         auto bitLength = oc::roundUpTo(oc::log2ceil((u64)(mPaxosParam.mSparseSize + 1)), 8);
-
         if (bitLength <= 8)
             implParSolve<u8>(inputs, V, P, prng, numThreads, h);
         else if (bitLength <= 16)

@@ -1,5 +1,6 @@
 #include <coproto/Socket/AsioSocket.h>
 #include <coproto/Socket/LocalAsyncSock.h>
+#include <cryptoTools/Common/Timer.h>
 #include <cryptoTools/Common/block.h>
 #include <cstddef>
 #include <cstring>
@@ -10,6 +11,7 @@
 #include "Defines.h"
 #include "OkvrReceiver.h"
 #include "OkvrSender.h"
+#include "Paxos.h"
 #include "SiOPRF.h"
 #include "SoOPPRF.h"
 #include "SoOPRF.h"

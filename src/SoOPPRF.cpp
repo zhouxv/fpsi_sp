@@ -32,6 +32,13 @@ void SoOPPRFSender::OPPRF(std::vector<oc::block> &keys, std::vector<oc::block> &
     coproto::sync_wait(socket->send(encoding));
 }
 
+void SoOPPRFSender::OPPRF(std::vector<oc::block> encoding, std::vector<oc::block> &y0)
+{
+    SoOPRFSender::OPRF(y0);
+
+    coproto::sync_wait(socket->send(encoding));
+}
+
 SoOPPRFRecver::SoOPPRFRecver(uint64_t num_, uint64_t num_kv_, uint64_t numThreads_, bool useOle_, coproto::Socket *socket_)
     : SoOPRFRecver(num_, numThreads_, useOle_, socket_)
 {

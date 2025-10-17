@@ -7,6 +7,7 @@
 #include <map>
 #include <vector>
 #include "Defines.h"
+#include "OKVS.h"
 #include "Paxos.h"
 #include "PaxosImpl.h"
 using namespace oc;
@@ -16,7 +17,7 @@ using namespace std;
 
 void perfBaxos(oc::CLP &cmd)
 {
-    auto n = cmd.getOr("n", 1ull << cmd.getOr("nn", 26));
+    auto n = cmd.getOr("n", 1ull << cmd.getOr("nn", 20));
     auto t = cmd.getOr("t", 1ull);
     // auto rand = cmd.isSet("rand");
     auto v = cmd.getOr("v", cmd.isSet("v") ? 1 : 0);
@@ -27,13 +28,14 @@ void perfBaxos(oc::CLP &cmd)
 
     // PaxosParam pp(n, w, ssp, dt);
     auto binSize = 1 << cmd.getOr("lbs", 14);
-    u64 baxosSize;
-    {
-        Baxos paxos;
-        paxos.init(n, binSize, w, ssp, dt, oc::ZeroBlock);
-        baxosSize = paxos.size();
-    }
-    std::vector<block> key(n), val(n), pax(baxosSize);
+    // u64 baxosSize;
+    // {
+    //     Baxos paxos;
+    //     paxos.init(n, binSize, w, ssp, dt, oc::ZeroBlock);
+    //     baxosSize = paxos.size();
+    // }
+    std::vector<block> key(n), val(n);
+    // std::vector<block> pax(64 * (22242 + 2));
 
     auto decode_size = 500;
 
@@ -49,67 +51,68 @@ void perfBaxos(oc::CLP &cmd)
     auto end = start;
     auto decode_start = start;
     auto decode_end = start;
-    for (u64 i = 0; i < t; ++i) {
-        Baxos paxos;
 
-        paxos.init(n, binSize, w, ssp, dt, block(i, i));
+    // Baxos paxos;
 
-        // if (v > 1)
-        //	paxos.setTimer(timer);
+    // paxos.init(n, binSize, w, ssp, dt, block(0, 0));
+    OKVS okvs(n);
 
-        timer.setTimePoint("s" + std::to_string(i));
+    // if (v > 1)
+    //	paxos.setTimer(timer);
 
-        paxos.solve<block>(key, val, pax, nullptr, nt);
+    timer.setTimePoint("start encode");
 
-        end = timer.setTimePoint("d" + std::to_string(i));
+    // paxos.solve<block>(key, val, pax, nullptr, nt);
+    auto pax = okvs.encode(key, val, 1);
 
-        memcpy(decode_key.data(), key.data(), decode_key.size() * sizeof(block));
+    end = timer.setTimePoint("end encode");
 
-        // paxos.decode<block>(decode_key, decode_val, pax, nt);
+    memcpy(decode_key.data(), key.data(), decode_key.size() * sizeof(block));
 
-        vector<block> hashs(decode_key.size());
-        vector<vector<u64>> idxs(decode_key.size(), vector<u64>(3 + 1));
+    // paxos.decode<block>(decode_key, decode_val, pax, nt);
 
-        paxos.computeRetrievalIdx<block>(decode_key, hashs, idxs, nt);
+    vector<block> hashs(decode_key.size());
+    vector<vector<u64>> idxs(decode_key.size(), vector<u64>(3 + 1));
 
-        // for (auto &vec : idxs) {
-        //     for (auto &u : vec)
-        //         std::cout << u << ",";
-        // }
+    // paxos.computeRetrievalIdx<block>(decode_key, hashs, idxs, nt);
 
-        decode_start = timer.setTimePoint("decode");
+    // for (auto &vec : idxs) {
+    //     for (auto &u : vec)
+    //         std::cout << u << ",";
+    // }
 
-        vector<std::map<u64, block>> pp(paxos.mNumBins, std::map<u64, block>());
+    // decode_start = timer.setTimePoint("decode");
 
-        // dense part
-        for (u64 b = 0; b < paxos.mNumBins; ++b) {
-            auto paxos_seg = std::vector<block>(
-                pax.begin() + b * (paxos.mPaxosParam.mSparseSize + paxos.mPaxosParam.mDenseSize),
-                pax.begin() + (b + 1) * (paxos.mPaxosParam.mSparseSize + paxos.mPaxosParam.mDenseSize));
+    // vector<std::map<u64, block>> pp(paxos.mNumBins, std::map<u64, block>());
 
-            for (u64 j = 0; j < paxos.mPaxosParam.mDenseSize; ++j) {
-                pp[b][j + paxos.mPaxosParam.mSparseSize] = paxos_seg[j + paxos.mPaxosParam.mSparseSize];
-            }
-        }
+    // // dense part
+    // for (u64 b = 0; b < paxos.mNumBins; ++b) {
+    //     auto paxos_seg = std::vector<block>(
+    //         pax.begin() + b * (paxos.mPaxosParam.mSparseSize + paxos.mPaxosParam.mDenseSize),
+    //         pax.begin() + (b + 1) * (paxos.mPaxosParam.mSparseSize + paxos.mPaxosParam.mDenseSize));
 
-        // sparse part
-        for (u64 i = 0; i < decode_key.size(); ++i) {
-            auto vec = idxs[i];
-            auto binIdx = vec[paxos.mPaxosParam.mWeight];
-            for (u64 j = 0; j < paxos.mPaxosParam.mWeight; ++j) {
-                pp[binIdx][vec[j]] = pax[binIdx * (paxos.mPaxosParam.mSparseSize + paxos.mPaxosParam.mDenseSize) + vec[j]];
-            }
-        }
+    //     for (u64 j = 0; j < paxos.mPaxosParam.mDenseSize; ++j) {
+    //         pp[b][j + paxos.mPaxosParam.mSparseSize] = paxos_seg[j + paxos.mPaxosParam.mSparseSize];
+    //     }
+    // }
 
-        decode_end = timer.setTimePoint("decode");
+    // // sparse part
+    // for (u64 i = 0; i < decode_key.size(); ++i) {
+    //     auto vec = idxs[i];
+    //     auto binIdx = vec[paxos.mPaxosParam.mWeight];
+    //     for (u64 j = 0; j < paxos.mPaxosParam.mWeight; ++j) {
+    //         pp[binIdx][vec[j]] = pax[binIdx * (paxos.mPaxosParam.mSparseSize + paxos.mPaxosParam.mDenseSize) + vec[j]];
+    //     }
+    // }
 
-        std::cout << "total dense size: " << paxos.mNumBins * paxos.mPaxosParam.mDenseSize * sizeof(block) / 1024.0 / 1024.0 << " MB" << std::endl;
+    // decode_end = timer.setTimePoint("decode");
 
-        paxos.decodeRetrievalIdx<block>(hashs, idxs, decode_val, pp, nt);
-    }
+    // std::cout << "total dense size: " << paxos.mNumBins * paxos.mPaxosParam.mDenseSize * sizeof(block) / 1024.0 / 1024.0 << " MB" << std::endl;
 
-    if (memcmp(val.data(), decode_val.data(), decode_val.size() * sizeof(block)) != 0)
-        std::cout << "Error: Decoded values do not match original values." << std::endl;
+    // paxos.decodeRetrievalIdx<block>(hashs, idxs, decode_val, pp, nt);
+
+    // if (memcmp(val.data(), decode_val.data(), decode_val.size() * sizeof(block)) != 0)
+    //     std::cout << "Error: Decoded values do not match original values." << std::endl;
 
     if (v)
         std::cout << timer << std::endl;
@@ -118,7 +121,7 @@ void perfBaxos(oc::CLP &cmd)
 
     auto decode_t = std::chrono::duration_cast<std::chrono::microseconds>(decode_end - decode_start).count() / double(1000);
 
-    std::cout << "encode " << tt << " ms, decode " << decode_t << " ms, e=" << double(baxosSize) / n << std::endl;
+    std::cout << "encode " << tt << " ms, decode " << decode_t << " ms, e=" << double(pax.size()) / n << std::endl;
 }
 
 void testGen(oc::CLP &cmd)
