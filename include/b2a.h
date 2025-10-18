@@ -1,3 +1,4 @@
+#pragma once
 #include <coproto/Socket/Socket.h>
 #include <cryptoTools/Common/block.h>
 #include <cryptoTools/Crypto/PRNG.h>

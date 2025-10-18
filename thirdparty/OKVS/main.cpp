@@ -117,8 +117,6 @@ void perfBaxos(oc::CLP &cmd)
     if (v)
         std::cout << timer << std::endl;
 
-    auto tt = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() / double(1000);
-
     auto decode_t = std::chrono::duration_cast<std::chrono::microseconds>(decode_end - decode_start).count() / double(1000);
 
     std::cout << "encode " << tt << " ms, decode " << decode_t << " ms, e=" << double(pax.size()) / n << std::endl;

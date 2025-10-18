@@ -1,20 +1,18 @@
 #include "b2a.h"
 #include <cryptoTools/Common/BitVector.h>
 #include <cryptoTools/Common/block.h>
+#include <cstring>
 #include <vector>
+#include "utils.h"
 
 using namespace oc;
 
 B2aSender::B2aSender(uint64_t num_, coproto::Socket *socket_) : num(num_), socket(socket_)
 {
-    num *= 64;
-
     sender = new osuCrypto::SilentOtExtSender();
-    sender->configure(num, 128);
+    sender->configure(num * 64);
 
     prng = new PRNG(ZeroBlock);
-
-    coproto::sync_wait(sender->genSilentBaseOts(*prng, *socket));
 }
 
 B2aSender::~B2aSender()
@@ -25,19 +23,33 @@ B2aSender::~B2aSender()
 
 void B2aSender::b2a(std::vector<block> &blk, std::vector<u64> &val)
 {
-    std::vector<std::array<block, 2>> messages(num);
+    coproto::sync_wait(sender->genSilentBaseOts(*prng, *socket));
 
-    BitVector choiceBit(reinterpret_cast<u8 *>(blk.data()), blk.size() * 128);
+    u64 numOts = num * 64;
+    std::vector<std::array<block, 2>> messages(numOts);
+
+    std::vector<u8> bits(numOts);
+
+    for (int i = 0; i < num; i++) {
+        u64 lowbits = low(blk[i]);
+        for (int j = 0; j < 64; j++) {
+            bits[i * 64 + j] = (lowbits >> j) & 1;
+        }
+    }
 
     coproto::sync_wait(sender->send(messages, *prng, *socket));
 
-    std::vector<block> correctMessages(num * 2);
-    for (int i = 0; i < num; i++) {
-        u64 r = prng->get<u64>();
-        u8 bit = choiceBit.data()[(i / 64) * 128 + (i % 64)];
-        correctMessages[i * 2] = messages[i][0] ^ block(0, r);
-        correctMessages[i * 2 + 1] = messages[i][1] ^ block(0, r + bit);
-        val[i / 64] = val[i / 64] | (u64(bit) << (i % 64));
+    std::vector<u64> correctMessages(numOts);
+
+    for (int i = 0; i < numOts; i++) {
+        u8 bit = bits[i];
+        u64 mask = low(messages[i][0]) + u64(bit);
+        correctMessages[i] = low(messages[i][1]) ^ mask;
+    }
+
+    for (int i = 0; i < numOts; i++) {
+        u8 bit = bits[i];
+        val[i / 64] += (u64(bit) + 2 * low(messages[i][0])) << (i % 64);
     }
 
     coproto::sync_wait(socket->send(correctMessages));
@@ -45,14 +57,10 @@ void B2aSender::b2a(std::vector<block> &blk, std::vector<u64> &val)
 
 B2aRecver::B2aRecver(uint64_t num_, coproto::Socket *socket_) : num(num_), socket(socket_)
 {
-    num *= 64;
-
     receiver = new osuCrypto::SilentOtExtReceiver();
-    receiver->configure(num, 128);
+    receiver->configure(num * 64);
 
     prng = new PRNG(OneBlock);
-
-    coproto::sync_wait(receiver->genSilentBaseOts(*prng, *socket));
 }
 
 B2aRecver::~B2aRecver()
@@ -63,18 +71,33 @@ B2aRecver::~B2aRecver()
 
 void B2aRecver::b2a(std::vector<block> &blk, std::vector<u64> &val)
 {
-    std::vector<block> messages(num);
-    BitVector choiceBit(reinterpret_cast<u8 *>(blk.data()), blk.size() * 128);
+    coproto::sync_wait(receiver->genSilentBaseOts(*prng, *socket));
+
+    u64 numOts = num * 64;
+    std::vector<block> messages(numOts);
+
+    std::vector<u8> bytes(numOts / 8);
+
+    for (int i = 0; i < num; i++) {
+        u64 lowbits = low(blk[i]);
+        for (int j = 0; j < 8; j++) {
+            bytes[i * 8 + j] = (lowbits >> (8 * j)) & 0xFF;
+        }
+    }
+
+    BitVector choiceBit(bytes.data(), numOts);
 
     coproto::sync_wait(receiver->receive(choiceBit, messages, *prng, *socket));
 
-    std::vector<block> correctMessages(num * 2);
+    std::vector<u64> correctMessages(numOts);
+
     coproto::sync_wait(socket->recv(correctMessages));
 
-    // for (int i = 0; i < num; i++) {
-    //     u64 r = prng->get<u64>();
-    //     u8 bit = choiceBit.data()[(i / 64) * 128 + (i % 64)];
-    //     block val = messages[i] ^ block(0, r + bit);
-    //     val[i / 64] = val[i / 64] | (u64(bit) << (i % 64));
-    // }
+    for (int i = 0; i < numOts; i++) {
+        if (choiceBit[i] & 1) {
+            val[i / 64] += (u64(choiceBit[i]) - 2 * (low(messages[i]) ^ correctMessages[i])) << (i % 64);
+        } else {
+            val[i / 64] += (u64(choiceBit[i]) - 2 * low(messages[i])) << (i % 64);
+        }
+    }
 }
