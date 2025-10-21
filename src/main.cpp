@@ -17,7 +17,6 @@
 #include "Defines.h"
 #include "OkvrReceiver.h"
 #include "OkvrSender.h"
-#include "Paxos.h"
 #include "SiOPRF.h"
 #include "SoOPPRF.h"
 #include "SoOPRF.h"
@@ -26,11 +25,13 @@
 #include "cryptoTools/Common/CLP.h"
 #include "eq.h"
 #include "fmap.h"
+#include "fmap_prefix.h"
 #include "libOTe/TwoChooseOne/Iknp/IknpOtExtReceiver.h"
 #include "libOTe/TwoChooseOne/Iknp/IknpOtExtSender.h"
+#include "mul.h"
+#include "mux.h"
 #include "secure-join/Prf/AltModPrf.h"
 #include "secure-join/Prf/AltModPrfProto.h"
-#include "utils.h"
 
 using namespace secJoin;
 
@@ -753,6 +754,52 @@ void eq_test()
     std::cout << "All Pass!" << std::endl;
 }
 
+void mul_test()
+{
+    auto sock = coproto::LocalAsyncSocket::makePair();
+
+    int n = 1 << 20;
+
+    MulSender sender(n, &sock[0]);
+    MulRecver recver(n, &sock[1]);
+    std::vector<u64> blk(n);
+    std::vector<u64> input0(n);
+    std::vector<u64> input1(n);
+
+    PRNG prng(oc::sysRandomSeed());
+
+    for (int i = 0; i < n; i++) {
+        // blk[i] = prng.get<u64>();
+        input0[i] = prng.get<u64>();
+        input1[i] = prng.get<u64>();
+    }
+
+    std::vector<u64> val0(n);
+    std::vector<u64> val1(n);
+
+    osuCrypto::Timer timer;
+    timer.setTimePoint("begin");
+
+    std::thread thread_sender([&] { sender.mul(input0, val0); });
+
+    std::thread thread_recver([&] { recver.mul(input1, val1); });
+
+    thread_sender.join();
+    thread_recver.join();
+
+    timer.setTimePoint("proto end");
+
+    for (int i = 0; i < 1; i++) {
+        if (val0[i] + val1[i] != input0[i] * input1[i]) {
+            std::cout << "error at " << i << std::endl;
+            std::cout << val0[i] + val1[i] << " " << input0[i] * input1[i] << std::endl;
+        }
+    }
+
+    std::cout << (sock[0].bytesSent() + sock[0].bytesReceived()) * 8.0 / n << std::endl;
+    std::cout << timer << std::endl;
+}
+
 int main(int argc, char **argv)
 {
     oc::CLP cmd(argc, argv);
@@ -785,50 +832,64 @@ int main(int argc, char **argv)
     int lp = cmd.getOr("p", 0);
 
     if (lp != 0) {
-        FmapLp(cmd);
+        fuzzyPsiLp(cmd);
     } else {
-        Fmap(cmd);
+        if (cmd.isSet("prefix")) {
+            fuzzyPsiPrefix(cmd);
+        } else {
+            fuzzyPsi(cmd);
+        }
     }
 
     return 0;
 
     auto sock = coproto::LocalAsyncSocket::makePair();
 
-    int n = 1 << 14;
+    int n = 1 << 15;
 
-    B2aSender sender(n, &sock[0]);
-    B2aRecver recver(n, &sock[1]);
+    MuxSender sender(n, &sock[0]);
+    MuxRecver recver(n, &sock[1]);
     std::vector<block> blk(n);
     std::vector<block> blk0(n);
     std::vector<block> blk1(n);
+    std::vector<block> v0(n);
+    std::vector<block> v1(n);
 
     PRNG prng(oc::sysRandomSeed());
 
     for (int i = 0; i < n; i++) {
-        blk[i] = prng.get<block>();
-        blk0[i] = prng.get<block>();
-        blk1[i] = blk[i] ^ blk0[i];
+        blk[i] = ZeroBlock;
+        blk0[i] = block(1, 1);
+        blk1[i] = block(1, 1234);
+        v0[i] = block(1, 0);
+        v1[i] = block(0, 1);
     }
 
-    std::vector<u64> val0(n);
-    std::vector<u64> val1(n);
+    // std::vector<u64> val0(n);
+    // std::vector<u64> val1(n);
+    // BitVector val0(n);
+    // BitVector val1(n);
+    // std::vector<u64> val0(n);
+    // std::vector<u64> val1(n);
+    std::vector<block> val0(n);
+    std::vector<block> val1(n);
 
     osuCrypto::Timer timer;
     timer.setTimePoint("begin");
 
-    // std::thread thread_sender([&] { sender.b2a(blk0, val0); });
+    std::thread thread_sender([&] { sender.mux(blk0, v0, val0); });
 
-    // std::thread thread_recver([&] { recver.b2a(blk1, val1); });
+    std::thread thread_recver([&] { recver.mux(blk1, v1, val1); });
 
-    // thread_sender.join();
-    // thread_recver.join();
+    thread_sender.join();
+    thread_recver.join();
 
     timer.setTimePoint("silent end");
 
-    // for (int i = 0; i < 1; i++) {
-    //     std::cout << val0[i] + val1[i] << std::endl;
-    //     std::cout << low(blk[i]) << std::endl;
-    // }
+    for (int i = 0; i < 1; i++) {
+        std::cout << (val0[i] ^ val1[i]) << std::endl;
+        // std::cout << low(blk[i]) << std::endl;
+    }
 
     std::cout << (sock[0].bytesSent() + sock[0].bytesReceived()) * 8.0 / n << std::endl;
 
@@ -840,80 +901,80 @@ int main(int argc, char **argv)
     //     std::cout << e << std::endl;
     // }
 
-    auto sockets = cp::LocalAsyncSocket::makePair();
+    // auto sockets = cp::LocalAsyncSocket::makePair();
 
-    PRNG prng0(block(4253465, 3434565));
-    PRNG prng1(block(42532335, 334565));
+    // PRNG prng0(block(4253465, 3434565));
+    // PRNG prng1(block(42532335, 334565));
 
-    {
-        SilentOtExtSender sender;
-        SilentOtExtReceiver recver;
-        sender.setTimer(timer);
-        recver.setTimer(timer);
+    // {
+    //     SilentOtExtSender sender;
+    //     SilentOtExtReceiver recver;
+    //     sender.setTimer(timer);
+    //     recver.setTimer(timer);
 
-        sender.configure(1 << 26);
-        recver.configure(1 << 26);
+    //     sender.configure(1 << 26);
+    //     recver.configure(1 << 26);
 
-        sync_wait(coproto::when_all_ready(sender.genSilentBaseOts(prng0, sockets[0]), recver.genSilentBaseOts(prng1, sockets[1])));
+    //     sync_wait(coproto::when_all_ready(sender.genSilentBaseOts(prng0, sockets[0]), recver.genSilentBaseOts(prng1, sockets[1])));
 
-        std::vector<std::array<block, 2>> b(1 << 26);
-        std::vector<block> a(1 << 26);
-        BitVector c(1 << 26);
+    //     std::vector<std::array<block, 2>> b(1 << 26);
+    //     std::vector<block> a(1 << 26);
+    //     BitVector c(1 << 26);
 
-        auto s = timer.setTimePoint("start");
+    //     auto s = timer.setTimePoint("start");
 
-        sync_wait(coproto::when_all_ready(sender.send(b, prng0, sockets[0]), recver.receive(c, a, prng1, sockets[1])));
+    //     sync_wait(coproto::when_all_ready(sender.send(b, prng0, sockets[0]), recver.receive(c, a, prng1, sockets[1])));
 
-        auto e = timer.setTimePoint("end");
-        std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(e - s).count() << " ms" << std::endl;
-    }
-    std::cout << timer << std::endl;
-    return 0;
+    //     auto e = timer.setTimePoint("end");
+    //     std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(e - s).count() << " ms" << std::endl;
+    // }
+    // std::cout << timer << std::endl;
+    // return 0;
 
-    u64 numTrials = 1;
-    for (u64 t = 0; t < numTrials; ++t) {
-        u64 numOTs = 1 << 20;
+    // u64 numTrials = 1;
+    // for (u64 t = 0; t < numTrials; ++t) {
+    //     u64 numOTs = 1 << 20;
 
-        AlignedUnVector<block> recvMsg(numOTs), baseRecv(128);
-        AlignedUnVector<std::array<block, 2>> sendMsg(numOTs), baseSend(128);
-        BitVector choices(numOTs);
-        choices.randomize(prng0);
+    //     AlignedUnVector<block> recvMsg(numOTs), baseRecv(128);
+    //     AlignedUnVector<std::array<block, 2>> sendMsg(numOTs), baseSend(128);
+    //     BitVector choices(numOTs);
+    //     choices.randomize(prng0);
 
-        BitVector baseChoice(128);
-        baseChoice.randomize(prng0);
+    //     BitVector baseChoice(128);
+    //     baseChoice.randomize(prng0);
 
-        for (u64 i = 0; i < 128; ++i) {
-            baseSend[i][0] = prng0.get<block>();
-            baseSend[i][1] = prng0.get<block>();
-            baseRecv[i] = baseSend[i][baseChoice[i]];
-        }
+    //     for (u64 i = 0; i < 128; ++i) {
+    //         baseSend[i][0] = prng0.get<block>();
+    //         baseSend[i][1] = prng0.get<block>();
+    //         baseRecv[i] = baseSend[i][baseChoice[i]];
+    //     }
 
-        IknpOtExtSender sender;
-        IknpOtExtReceiver recv;
+    //     IknpOtExtSender sender;
+    //     IknpOtExtReceiver recv;
 
-        sender.setTimer(timer);
-        recv.setTimer(timer);
+    //     sender.setTimer(timer);
+    //     recv.setTimer(timer);
 
-        sender.mHashType = HashType::NoHash;
-        recv.mHashType = HashType::NoHash;
-        ;
-        recv.setBaseOts(baseSend);
-        auto proto0 = recv.receive(choices, recvMsg, prng0, sockets[0]);
-        block delta = baseChoice.getArrayView<block>()[0];
+    //     sender.mHashType = HashType::NoHash;
+    //     recv.mHashType = HashType::NoHash;
+    //     ;
+    //     recv.setBaseOts(baseSend);
+    //     auto proto0 = recv.receive(choices, recvMsg, prng0, sockets[0]);
+    //     // block delta = baseChoice.getArrayView<block>()[0];
 
-        sender.setBaseOts(baseRecv, baseChoice);
-        auto proto1 = sender.send(sendMsg, prng1, sockets[1]);
-        timer.setTimePoint("iknp start");
-        std::thread thrd0([&] { coproto::sync_wait(std::move(proto0)); });
-        std::thread thrd1([&] { coproto::sync_wait(std::move(proto1)); });
+    //     sender.setBaseOts(baseRecv, baseChoice);
+    //     auto proto1 = sender.send(sendMsg, prng1, sockets[1]);
+    //     timer.setTimePoint("iknp start");
+    //     std::thread thrd0([&] { coproto::sync_wait(std::move(proto0)); });
+    //     std::thread thrd1([&] { coproto::sync_wait(std::move(proto1)); });
 
-        thrd0.join();
-        thrd1.join();
+    //     thrd0.join();
+    //     thrd1.join();
 
-        timer.setTimePoint("iknp end");
+    //     timer.setTimePoint("iknp end");
 
-        std::cout << (sockets[0].bytesSent() + sockets[0].bytesReceived()) * 8.0 / numOTs << std::endl;
-    }
+    //     std::cout << (sockets[0].bytesSent() + sockets[0].bytesReceived()) * 8.0 / numOTs << std::endl;
+    // }
 
-    std::cout << timer << std::endl;
+    // std::cout << timer << std::endl;
 }
