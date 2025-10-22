@@ -15,9 +15,16 @@ std::tuple<std::vector<std::vector<u64>>, std::vector<std::vector<u64>>> genInpu
 
 inline u64 low(oc::block &blk)
 {
-    u64 low64 = ((u64 *)&blk)[0]; // 低 64 位
+    u64 low64 = _mm_extract_epi64(blk, 0);
 
     return low64;
+}
+
+inline u64 high(oc::block &blk)
+{
+    u64 high64 = _mm_extract_epi64(blk, 1);
+
+    return high64;
 }
 
 // Decompose the interval [start, end] using an improved method in appendix
@@ -51,7 +58,7 @@ inline std::vector<block> getIntervalPrefix(u64 start, u64 end)
     u64 left_len = aligned_start - start;    // left side length
 
     // convert to binary representation, bitset access is from low bit to high bit
-    std::bitset<64> right_bits(right_len);
+    std::bitset<64> right_bits(right_len); // right_len + left_len = 2\delta + 1
     std::bitset<64> left_bits(left_len);
 
     std::vector<block> results;       // result set
@@ -86,6 +93,24 @@ inline std::vector<block> getPrefix(u64 x, int maxLen)
     return res;
 }
 
+inline u64 upBound(block prefix)
+{
+    u64 len = high(prefix);
+    u64 base = low(prefix);
+    u64 upper = (1 << len) - 1 + (base << len);
+
+    return upper;
+}
+
+inline u64 lowBound(block prefix)
+{
+    u64 len = high(prefix);
+    u64 base = low(prefix);
+    u64 lower = base << len;
+
+    return lower;
+}
+
 void inline Hash(std::vector<block> &input)
 {
     auto n8 = input.size() / 8 * 8;
@@ -111,4 +136,23 @@ void inline Hash(std::vector<block> &input)
         input[i] = input[i] & mask;
         input[i] = oc::mAesFixedKey.hashBlock(input[i]);
     }
+}
+
+inline uint64_t combination(uint64_t n, uint64_t k)
+{
+    if (k > n)
+        return 0;
+    if (k == 0 || k == n)
+        return 1;
+
+    // 对称性：C(n, k) = C(n, n-k)
+    if (k > n - k)
+        k = n - k;
+
+    uint64_t result = 1;
+    for (uint64_t i = 1; i <= k; ++i) {
+        result = result * (n - i + 1) / i;
+    }
+
+    return result;
 }

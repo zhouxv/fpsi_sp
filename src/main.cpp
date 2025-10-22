@@ -1,3 +1,4 @@
+#include <array>
 #include <coproto/Common/macoro.h>
 #include <coproto/Socket/AsioSocket.h>
 #include <coproto/Socket/LocalAsyncSock.h>
@@ -13,6 +14,7 @@
 #include <macoro/when_all.h>
 #include <secure-join/Defines.h>
 #include <thread>
+#include <unistd.h>
 #include <vector>
 #include "Defines.h"
 #include "OkvrReceiver.h"
@@ -832,7 +834,11 @@ int main(int argc, char **argv)
     int lp = cmd.getOr("p", 0);
 
     if (lp != 0) {
-        fuzzyPsiLp(cmd);
+        if (cmd.isSet("prefix")) {
+            fuzzyPsiLpPrefix(cmd);
+        } else {
+            fuzzyPsiLp(cmd);
+        }
     } else {
         if (cmd.isSet("prefix")) {
             fuzzyPsiPrefix(cmd);
@@ -840,46 +846,103 @@ int main(int argc, char **argv)
             fuzzyPsi(cmd);
         }
     }
-
     return 0;
+
+    // SilentOtExtSender sender;
+    // SilentOtExtReceiver recver;
+
+    // u64 n = 1 << 10;
+    // sender.configure(n);
+    // recver.configure(n);
+
+    // PRNG prng0(oc::sysRandomSeed());
+    // PRNG prng1(oc::sysRandomSeed());
+
+    // auto socket = coproto::AsioSocket::makePair();
+
+    // sync_wait(coproto::when_all_ready(sender.genSilentBaseOts(prng0, socket[0]), recver.genSilentBaseOts(prng1, socket[1])));
+
+    // BitVector choices(n);
+    // vector<array<block, 2>> b(n);
+    // vector<block> a(n);
+
+    // sync_wait(coproto::when_all_ready(sender.silentSend(b, prng0, socket[0]), recver.silentReceive(choices, a, prng1, socket[1])));
+
+    // for (u64 i = 0; i < n; i++) {
+    //     if (b[i][choices[i] ? 1 : 0] != a[i]) {
+    //         std::cout << "error at " << i << std::endl;
+    //     }
+    // }
+
+    // BitVector choices1(n / 2);
+    // vector<array<block, 2>> b1(n / 2);
+    // vector<block> a1(n / 2);
+
+    // std::cout << socket[0].bytesSent() + socket[0].bytesReceived() << std::endl;
+
+    // sync_wait(coproto::when_all_ready(sender.silentSend(b1, prng0, socket[0]), recver.silentReceive(choices1, a1, prng1, socket[1])));
+
+    // std::cout << socket[0].bytesSent() + socket[0].bytesReceived() << std::endl;
+
+    // for (u64 i = 0; i < n / 2; i++) {
+    //     if (b1[i][choices1[i] ? 1 : 0] != a1[i]) {
+    //         std::cout << "error at " << i << std::endl;
+    //     }
+    // }
+
+    // std::cout << a1[0] << std::endl;
+    // std::cout << a[0] << std::endl;
+
+    // std::cout << "All Pass!" << std::endl;
+
+    // return 0;
 
     auto sock = coproto::LocalAsyncSocket::makePair();
 
-    int n = 1 << 15;
+    int n = 2;
 
     MuxSender sender(n, &sock[0]);
     MuxRecver recver(n, &sock[1]);
     std::vector<block> blk(n);
     std::vector<block> blk0(n);
     std::vector<block> blk1(n);
-    std::vector<block> v0(n);
-    std::vector<block> v1(n);
+    // std::vector<block> v0(n);
+    // std::vector<block> v1(n);
+    std::vector<u64> v0(n);
+    std::vector<u64> v1(n);
 
     PRNG prng(oc::sysRandomSeed());
 
-    for (int i = 0; i < n; i++) {
-        blk[i] = ZeroBlock;
-        blk0[i] = block(1, 1);
-        blk1[i] = block(1, 1234);
-        v0[i] = block(1, 0);
-        v1[i] = block(0, 1);
-    }
+    // for (int i = 0; i < n; i++) {
+    //     blk0[i] = block(1, 1);
+    //     blk1[i] = block(1, 1234);
+    //     v0[i] = block(1, 0);
+    //     v1[i] = block(0, 1);
+    // }
+    blk0[0] = block(2, 2);
+    blk1[0] = block(2, 1);
+    v0[0] = 121;
+    v1[0] = 25;
 
+    blk0[1] = block(0, 1);
+    blk1[1] = block(0, 1);
+    v0[1] = 7;
+    v1[1] = 2;
     // std::vector<u64> val0(n);
     // std::vector<u64> val1(n);
     // BitVector val0(n);
     // BitVector val1(n);
-    // std::vector<u64> val0(n);
-    // std::vector<u64> val1(n);
-    std::vector<block> val0(n);
-    std::vector<block> val1(n);
+    std::vector<u64> val0(n, 0);
+    std::vector<u64> val1(n, 0);
+    // std::vector<block> val0(n);
+    // std::vector<block> val1(n);
 
     osuCrypto::Timer timer;
     timer.setTimePoint("begin");
 
-    std::thread thread_sender([&] { sender.mux(blk0, v0, val0); });
+    std::thread thread_sender([&] { sender.muxA(blk0, v0, val0, 2); });
 
-    std::thread thread_recver([&] { recver.mux(blk1, v1, val1); });
+    std::thread thread_recver([&] { recver.muxA(blk1, v1, val1, 2); });
 
     thread_sender.join();
     thread_recver.join();
@@ -887,7 +950,7 @@ int main(int argc, char **argv)
     timer.setTimePoint("silent end");
 
     for (int i = 0; i < 1; i++) {
-        std::cout << (val0[i] ^ val1[i]) << std::endl;
+        std::cout << (val0[i] + val1[i]) << std::endl;
         // std::cout << low(blk[i]) << std::endl;
     }
 

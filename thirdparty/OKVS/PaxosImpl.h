@@ -182,8 +182,6 @@ namespace Okvs {
 
             mDenseSize = mG + (dt == DenseType::Binary) * ssp;
             mSparseSize = numItems * e;
-
-            std::cout << "Sparse size: " << mSparseSize << ", Dense size: " << mDenseSize << std::endl;
         }
     }
 

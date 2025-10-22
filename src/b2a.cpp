@@ -23,6 +23,8 @@ B2aSender::~B2aSender()
 
 void B2aSender::b2a(std::vector<block> &blk, std::vector<u64> &val)
 {
+    auto curr_comm = socket->bytesReceived() + socket->bytesSent();
+
     coproto::sync_wait(sender->genSilentBaseOts(*prng, *socket));
 
     u64 numOts = num * 64;
@@ -53,6 +55,9 @@ void B2aSender::b2a(std::vector<block> &blk, std::vector<u64> &val)
     }
 
     coproto::sync_wait(socket->send(correctMessages));
+
+    auto end_comm = socket->bytesReceived() + socket->bytesSent();
+    std::cout << "b2a comm: " << (end_comm - curr_comm) / 1024.0 / 1024.0 << " MB " << std::endl;
 }
 
 B2aRecver::B2aRecver(uint64_t num_, coproto::Socket *socket_) : num(num_), socket(socket_)

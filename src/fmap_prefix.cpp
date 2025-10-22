@@ -3,7 +3,7 @@
 #include <cryptoTools/Common/Defines.h>
 #include <cryptoTools/Common/block.h>
 #include <cryptoTools/Crypto/PRNG.h>
-#include <map>
+#include <thread>
 #include <vector>
 #include "Defines.h"
 #include "OKVS.h"
@@ -605,16 +605,23 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
     u64 delta_p = std::pow(delta, lp);
     int prefixLen = static_cast<int>(std::ceil(std::log2(delta * 2 + 1)));
 
+    int prefixLenIfmat = static_cast<int>(std::ceil(std::log2(delta_p * 2 + 1)));
+
+    int prefixLenUpDown = 2 * static_cast<int>(std::ceil(std::log2(delta + 1)));
+
     std::vector<std::vector<u64>> sendSet;
     std::vector<block> sendPid;
     std::vector<block> sendListKey;
     std::vector<block> sendListVal;
 
+    PRNG prng(sysRandomSeed());
+
     for (u64 i = 0; i < n; i++) {
         std::vector<u64> tmp;
-        for (u64 j = 0; j < d; j++) {
-            tmp.push_back(i + j);
+        for (u64 j = 0; j < d - 1; j++) {
+            tmp.push_back(prng.get<u64>() + 2 * delta);
         }
+        tmp.push_back(prng.get<u64>() + 2 * delta); // make sure there are some differences
         sendSet.push_back(tmp);
     }
 
@@ -625,19 +632,21 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
 
     for (u64 i = 0; i < n; i++) {
         std::vector<u64> tmp;
-        for (u64 j = 0; j < d; j++) {
-            tmp.push_back(i + j + 5);
+        for (u64 j = 0; j < d - 1; j++) {
+            tmp.push_back(prng.get<u64>() + 2 * delta);
         }
+        tmp.push_back(prng.get<u64>() + 2 * delta); // make sure there are some differences
         recvSet.push_back(tmp);
     }
 
-    std::thread sendLocalMap([&] { LocalMap(sendSet, sendPid, sendListKey, sendListVal, delta); });
-    std::thread recvLocalMap([&] { LocalMap(recvSet, recvPid, recvListKey, recvListVal, delta); });
+    std::thread sendLocalMap([&] { LocalMapPrefix(sendSet, sendPid, sendListKey, sendListVal, delta); });
+    std::thread recvLocalMap([&] { LocalMapPrefix(recvSet, recvPid, recvListKey, recvListVal, delta); });
 
     sendLocalMap.join();
     recvLocalMap.join();
 
-    auto dummyOKVS = OKVS(n * d * (2 * delta + 1));
+    auto dummyOKVS = OKVS(n * d * prefixLen);
+
     // local encoding from set, totally offline
 
     // fmap start
@@ -658,45 +667,78 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
     std::vector<block> ID_R(n);
     std::vector<block> ID_S(n);
 
-    PRNG prng(ZeroBlock);
     AltModPrf RO(prng.get());
     auto key = RO.mExpandedKey;
     AltModPrf::KeyType k1 = prng.get();
     AltModPrf::KeyType k0 = k1 ^ key;
 
     std::thread sendSoOPPRFReverse([&] {
-        SoOPPRFRecver recv(n * d, n * d * (2 * delta + 1), 1, false, &sock[0]);
+        SoOPPRFRecver recv(n * d * prefixLen, n * d * prefixLen, 1, false, &sock[0]);
 
-        std::vector<block> inputs(n * d);
+        std::vector<block> inputs(n * d * prefixLen);
         for (u64 i = 0; i < n; i++) {
             for (u64 j = 0; j < d; j++) {
-                inputs[i * d + j] = block(j, sendSet[i][j]);
+                auto prefixes = getPrefix(sendSet[i][j], prefixLen);
+                for (int k = 0; k < prefixLen; k++) {
+                    inputs[i * d * prefixLen + j * prefixLen + k] = block(j << 32, 0) ^ prefixes[k];
+                }
             }
         }
-        std::vector<block> rand_S(n * d);
+        std::vector<block> rand_S(n * d * prefixLen);
 
-        Hash(inputs);
         recv.OPPRF(inputs, rand_S);
+
+        std::vector<block> u(n * d * prefixLen);
+        std::vector<block> v(n * d * prefixLen);
+
+        for (u64 i = 0; i < n * d * prefixLen; i++) {
+            u[i] = rand_S[i] >> 64;
+            v[i] = block(0, low(rand_S[i]));
+        }
+
+        MuxSender mux(n * d * prefixLen, &sock[0]);
+
+        std::vector<block> t(n * d * prefixLen);
+
+        mux.mux(u, v, t);
 
         for (u64 i = 0; i < n; i++) {
             for (u64 j = 0; j < d; j++) {
-                rand_S_j[i] ^= rand_S[i * d + j];
+                for (int k = 0; k < prefixLen; k++) {
+                    rand_S_j[i] ^= t[i * d * prefixLen + j * prefixLen + k];
+                }
             }
             rand_S_j[i] = rand_S_j[i] ^ sendPid[i];
         }
     });
 
     std::thread recvSoOPPRFReverse([&] {
-        SoOPPRFSender send(n * d, n * d * (2 * delta + 1), 1, false, &sock[1]);
+        SoOPPRFSender send(n * d * prefixLen, n * d * prefixLen, 1, false, &sock[1]);
 
-        std::vector<block> rand_R(n * d);
+        std::vector<block> rand_R(n * d * prefixLen);
 
         // send.OPPRF(recvListKey, recvListVal, rand_R);
         send.OPPRF(dummyEncoding, rand_R);
 
+        std::vector<block> u(n * d * prefixLen);
+        std::vector<block> v(n * d * prefixLen);
+
+        for (u64 i = 0; i < n * d * prefixLen; i++) {
+            u[i] = rand_R[i] >> 64;
+            v[i] = block(0, low(rand_R[i]));
+        }
+
+        MuxRecver mux(n * d * prefixLen, &sock[1]);
+
+        std::vector<block> t(n * d * prefixLen);
+
+        mux.mux(u, v, t);
+
         for (u64 i = 0; i < n; i++) {
             for (u64 j = 0; j < d; j++) {
-                rand_R_j[i] ^= rand_R[i * d + j];
+                for (int k = 0; k < prefixLen; k++) {
+                    rand_R_j[i] ^= t[i * d * prefixLen + j * prefixLen + k];
+                }
             }
         }
     });
@@ -741,38 +783,73 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
     rand_S_j = std::vector<block>(n);
 
     std::thread sendSoOPPRF([&] {
-        SoOPPRFSender send(n * d, n * d * (2 * delta + 1), 1, false, &sock[0]);
+        SoOPPRFSender send(n * d * prefixLen, n * d * prefixLen, 1, false, &sock[0]);
 
-        std::vector<block> rand_S(n * d);
+        std::vector<block> rand_S(n * d * prefixLen);
 
         // send.OPPRF(sendListKey, sendListVal, rand_S);
         send.OPPRF(dummyEncoding, rand_S);
 
+        std::vector<block> u(n * d * prefixLen);
+        std::vector<block> v(n * d * prefixLen);
+
+        for (u64 i = 0; i < n * d * prefixLen; i++) {
+            u[i] = rand_S[i] >> 64;
+            v[i] = block(0, low(rand_S[i]));
+        }
+
+        MuxSender mux(n * d * prefixLen, &sock[0]);
+
+        std::vector<block> t(n * d * prefixLen);
+
+        mux.mux(u, v, t);
+
         for (u64 i = 0; i < n; i++) {
             for (u64 j = 0; j < d; j++) {
-                rand_S_j[i] ^= rand_S[i * d + j];
+                for (int k = 0; k < prefixLen; k++) {
+                    rand_S_j[i] ^= t[i * d * prefixLen + j * prefixLen + k];
+                }
             }
         }
     });
 
     std::thread recvSoOPPRF([&] {
-        SoOPPRFRecver recv(n * d, n * d * (2 * delta + 1), 1, false, &sock[1]);
+        SoOPPRFRecver recv(n * d * prefixLen, n * d * prefixLen, 1, false, &sock[1]);
 
-        std::vector<block> inputs(n * d);
+        std::vector<block> inputs(n * d * prefixLen);
         for (u64 i = 0; i < n; i++) {
             for (u64 j = 0; j < d; j++) {
-                inputs[i * d + j] = block(j, recvSet[i][j]);
+                auto prefixes = getPrefix(recvSet[i][j], prefixLen);
+                for (int k = 0; k < prefixLen; k++) {
+                    inputs[i * d * prefixLen + j * prefixLen + k] = block(j << 32, 0) ^ prefixes[k];
+                }
             }
         }
-        std::vector<block> rand_R(n * d);
+        std::vector<block> rand_R(n * d * prefixLen);
 
         recv.OPPRF(inputs, rand_R);
 
+        std::vector<block> u(n * d * prefixLen);
+        std::vector<block> v(n * d * prefixLen);
+
+        for (u64 i = 0; i < n * d * prefixLen; i++) {
+            u[i] = rand_R[i] >> 64;
+            v[i] = block(0, low(rand_R[i]));
+        }
+
+        MuxRecver mux(n * d * prefixLen, &sock[1]);
+
+        std::vector<block> t(n * d * prefixLen);
+
+        mux.mux(u, v, t);
+
         for (u64 i = 0; i < n; i++) {
             for (u64 j = 0; j < d; j++) {
-                rand_R_j[i] ^= rand_R[i * d + j];
+                for (int k = 0; k < prefixLen; k++) {
+                    rand_R_j[i] ^= t[i * d * prefixLen + j * prefixLen + k];
+                }
             }
-            rand_R_j[i] = rand_R_j[i] ^ recvPid[i];
+            rand_R_j[i] = rand_R_j[i] ^ sendPid[i];
         }
     });
 
@@ -816,6 +893,7 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
     rand_S_j = std::vector<block>(n);
 
     // fmap finish
+
     time.setTimePoint("fmap done");
     std::cout << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB " << std::endl;
 
@@ -827,39 +905,131 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
     std::vector<block> prefixR;
     std::vector<block> prefixS;
 
-    std::thread sendFilter([&] {
-        std::vector<block> inputs(n * d);
+    int OkvsBatch = lp / 2 + 1;
+    int halfprefixLen = prefixLenUpDown / 2;
 
-        for (int i = 0; i < n; i++) {
-            for (int j = 0; j < d; j++) {
-                inputs[i * d + j] = (ID_S[i] << 8) ^ block(j, sendSet[i][j]); // 8 bits for dimension
+    std::thread sendFilter([&] {
+        std::vector<block> inputs(n * d * halfprefixLen * 2 * OkvsBatch);
+
+        for (int batch = 0; batch < OkvsBatch; batch++) {
+            for (int i = 0; i < n; i++) {
+                for (int j = 0; j < d; j++) {
+                    auto prefixes = getPrefix(sendSet[i][j], halfprefixLen);
+                    for (int s = 0; s < 2; s++) {
+                        for (int k = 0; k < halfprefixLen; k++) {
+                            auto idx = batch * n * d * halfprefixLen * 2 + i * d * halfprefixLen * 2 + j * halfprefixLen * 2 + s * halfprefixLen + k;
+                            inputs[idx] = (ID_S[i] << 76) ^ block((j << 8) | (batch << 6) | (s << 4), 0) ^ prefixes[k]; //  batch, i, j, s, k
+                        }
+                    }
+                }
             }
         }
 
-        SoOPPRFRecver recv(n * d, n * d * (2 * delta + 1), 1, false, &sock[0]);
+        SoOPPRFRecver recv(OkvsBatch * n * d * 2 * halfprefixLen, OkvsBatch * n * d * 2 * halfprefixLen, 1, false, &sock[0]);
 
-        std::vector<block> rand_S(n * d);
+        std::vector<block> rand_S(OkvsBatch * n * d * 2 * halfprefixLen);
 
         recv.OPPRF(inputs, rand_S);
 
-        std::vector<u64> rand_S_A(n * d);
+        std::vector<block> u(n * d * prefixLenUpDown);
+        std::vector<block> v(n * d * prefixLenUpDown * lp);
+
+        for (u64 i = 0; i < 1 * n * d * 2 * halfprefixLen; i++) {
+            u[i] = block(0, high(rand_S[i]));
+        }
+        if (lp == 1) {
+            for (u64 i = 0; i < 1 * n * d * 2 * halfprefixLen; i++) {
+                v[i] = block(0, low(rand_S[i]));
+            }
+        } else if (lp == 2) {
+            for (u64 i = 0; i < 1 * n * d * 2 * halfprefixLen; i++) {
+                v[i] = block(0, low(rand_S[i]));
+            }
+            for (u64 i = 1 * n * d * 2 * halfprefixLen; i < 2 * n * d * 2 * halfprefixLen; i++) {
+                v[i] = block(0, high(rand_S[i]));
+            }
+        } else {
+            throw std::runtime_error("lp not supported");
+        }
+
+        // std::vector<block> v_selected(n * d * lp);
+
+        // MuxSender mux(n * d * prefixLenUpDown, &sock[0]);
+        // if (lp == 1) {
+        //     mux.mux(u, v, v_selected, prefixLenUpDown);
+        // } else if (lp == 2) {
+        //     std::vector<block> res0(n * d);
+        //     std::vector<block> res1(n * d);
+        //     std::vector<block> v1(v.begin(), v.begin() + n * d * prefixLenUpDown);
+        //     std::vector<block> v2(v.begin() + n * d * prefixLenUpDown, v.end());
+        //     mux.mux(u, v1, res0, prefixLen);
+        //     mux.mux(u, v2, res1, prefixLen);
+        //     for (u64 i = 0; i < n * d; i++) {
+        //         v_selected[i] = res0[i];
+        //         v_selected[i + n * d] = res1[i];
+        //     }
+        // }
+
+        std::vector<u64> v_A(n * d * prefixLenUpDown * lp);
 
         oc::Timer localTime;
 
-        auto s = localTime.setTimePoint("b2a start");
+        auto start = localTime.setTimePoint("b2a start");
 
-        B2aSender b2aSender(n * d, &sock[0]);
-        b2aSender.b2a(rand_S, rand_S_A);
+        B2aSender b2aSender(n * d * prefixLenUpDown * lp, &sock[0]);
+        b2aSender.b2a(v, v_A);
 
-        auto e = localTime.setTimePoint("b2a done");
+        auto end = localTime.setTimePoint("b2a done");
 
-        auto dt = std::chrono::duration_cast<std::chrono::microseconds>(e - s).count() / double(1000);
+        auto dt = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() / double(1000);
 
         std::cout << "b2a time: " << dt << " ms" << std::endl;
 
+        std::vector<u64> sumDis(n * d * 2 * halfprefixLen, 0);
+        std::vector<u64> e(n * d * 2 * halfprefixLen, 0);
+
+        for (int i = 0; i < n; i++) {
+            for (int j = 0; j < d; j++) {
+                auto prefixes = getPrefix(sendSet[i][j], halfprefixLen);
+                for (int s = 0; s < 2; s++) {
+                    for (int k = 0; k < halfprefixLen; k++) {
+                        e[i * d * prefixLenUpDown + j * prefixLenUpDown + s * halfprefixLen + k] = (s == 0) ? upBound(prefixes[k]) : 0 - upBound(prefixes[k]);
+                    }
+                }
+            }
+        }
+
+        if (lp == 1) {
+            for (u64 i = 0; i < n * d * prefixLenUpDown; i++) {
+                sumDis[i] = v_A[i] + e[i];
+            }
+        }
+        if (lp == 2) {
+            MulSender mulSender(n * d * prefixLenUpDown, &sock[0]);
+            std::vector<u64> product(n * d * prefixLenUpDown, 0);
+            std::vector<u64> v_A_1(n * d * prefixLenUpDown, 0);
+            std::vector<u64> v_A_2(n * d * prefixLenUpDown, 0);
+
+            for (u64 i = 0; i < 1 * n * d * 2 * halfprefixLen; i++) {
+                v_A_1[i] = v_A[i];
+                v_A_2[i] = v_A[i + 1 * n * d * 2 * halfprefixLen];
+            }
+
+            mulSender.mul(e, product);
+
+            for (u64 i = 0; i < n * d * prefixLenUpDown; i++) {
+                sumDis[i] = e[i] * e[i] + 2 * e[i] * v_A_1[i] + 2 * product[i] + v_A_2[i];
+            }
+        }
+
+        std::vector<u64> rand_i_j(n * d, 0);
+
+        MuxSender mux(n * d * prefixLenUpDown, &sock[0]);
+        mux.muxA(u, sumDis, rand_i_j, prefixLenUpDown);
+
         for (u64 i = 0; i < n; i++) {
             for (u64 j = 0; j < d; j++) {
-                disS[i] += rand_S_A[i * d + j];
+                disS[i] += rand_i_j[i * d + j];
             }
         }
 
@@ -870,42 +1040,130 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
                 prefixS.push_back(p);
             }
         }
-        while (prefixS.size() != (n * prefixLen)) {
+        while (prefixS.size() != (n * prefixLenIfmat)) {
             prefixS.push_back(prng.get<block>());
         }
 
-        PEqTSender eqSend(n * prefixLen, 1, false, &sock[0]);
+        PEqTSender eqSend(n * prefixLenIfmat, 1, false, &sock[0]);
 
         eqSend.eq(prefixS);
     });
 
     std::thread recvFilter([&] {
-        std::vector<block> filterKey(n * d * (2 * delta + 1));
-        std::vector<block> filterVal(n * d * (2 * delta + 1));
-        u64 idx = 0;
+        std::vector<block> filterKey;
+        std::vector<block> filterVal;
 
         for (int i = 0; i < n; i++) {
             for (int j = 0; j < d; j++) {
-                for (int t = -delta; t <= delta; t++) {
-                    block key = (ID_R[i] << 8) ^ block(j, recvSet[i][j] + t);
-                    block val = ZeroBlock;
-                    filterKey[idx] = key;
-                    filterVal[idx] = val;
-                    idx++;
+                auto prefixes0 = getIntervalPrefix(recvSet[i][j] - delta, recvSet[i][j] - 1);
+                auto prefixes1 = getIntervalPrefix(recvSet[i][j], recvSet[i][j] + delta);
+                for (auto &p : prefixes0) {
+                    auto upbound = upBound(p);
+                    for (int batch = 0; batch < OkvsBatch; batch++) {
+                        block key = (ID_S[i] << 76) ^ block((j << 8) | (batch << 6) | (0 << 4), 0) ^ p;
+                        block val = ZeroBlock;
+                        if (batch == 0) {
+                            val = block(0, std::pow(recvSet[i][j] - upbound, batch + 1));
+                        } else {
+                            val = block(std::pow(recvSet[i][j] - upbound, batch + 1), 0);
+                        }
+                        filterKey.push_back(key);
+                        filterVal.push_back(val);
+                    }
+                }
+                for (auto &p : prefixes1) {
+                    auto upbound = upBound(p);
+                    for (int batch = 0; batch < OkvsBatch; batch++) {
+                        block key = (ID_S[i] << 76) ^ block((j << 8) | (batch << 6) | (1 << 4), 0) ^ p;
+                        block val = ZeroBlock;
+                        if (batch == 0) {
+                            val = block(0, std::pow(upbound - recvSet[i][j], batch + 1));
+                        } else {
+                            val = block(std::pow(upbound - recvSet[i][j], batch + 1), 0);
+                        }
+                        filterKey.push_back(key);
+                        filterVal.push_back(val);
+                    }
                 }
             }
         }
 
-        SoOPPRFSender send(n * d, n * d * (2 * delta + 1), 1, false, &sock[1]);
+        if (filterKey.size() > n * d * prefixLenUpDown * OkvsBatch) {
+            throw std::runtime_error("filterKey size wrong");
+        }
 
-        std::vector<block> rand_R(n * d);
+        while (filterKey.size() < n * d * prefixLenUpDown * OkvsBatch) {
+            filterKey.push_back(prng.get<block>());
+            filterVal.push_back(prng.get<block>());
+        }
+
+        if (filterVal.size() != n * d * prefixLenUpDown * OkvsBatch) {
+            throw std::runtime_error("filterVal size wrong");
+        }
+
+        SoOPPRFSender send(n * d * prefixLenUpDown * OkvsBatch, n * d * prefixLenUpDown * OkvsBatch, 1, false, &sock[1]);
+
+        std::vector<block> rand_R(n * d * prefixLenUpDown * OkvsBatch);
 
         send.OPPRF(filterKey, filterVal, rand_R);
 
+        std::vector<block> u(n * d * prefixLenUpDown);
+        std::vector<block> v(n * d * prefixLenUpDown * lp);
+
+        for (u64 i = 0; i < 1 * n * d * 2 * halfprefixLen; i++) {
+            u[i] = block(0, high(rand_R[i]));
+        }
+        if (lp == 1) {
+            for (u64 i = 0; i < 1 * n * d * 2 * halfprefixLen; i++) {
+                v[i] = block(0, low(rand_R[i]));
+            }
+        } else if (lp == 2) {
+            for (u64 i = 0; i < 1 * n * d * 2 * halfprefixLen; i++) {
+                v[i] = block(0, low(rand_R[i]));
+            }
+            for (u64 i = 1 * n * d * 2 * halfprefixLen; i < 2 * n * d * 2 * halfprefixLen; i++) {
+                v[i] = block(0, high(rand_R[i]));
+            }
+        } else {
+            throw std::runtime_error("lp not supported");
+        }
+
         std::vector<u64> rand_R_A(n * d);
 
-        B2aRecver b2aRecver(n * d, &sock[1]);
-        b2aRecver.b2a(rand_R, rand_R_A);
+        std::vector<u64> v_A(n * d * prefixLenUpDown * lp);
+
+        B2aRecver b2aRecver(n * d * prefixLenUpDown * lp, &sock[1]);
+        b2aRecver.b2a(v, v_A);
+
+        std::vector<u64> sumDis(n * d * prefixLenUpDown);
+
+        if (lp == 1) {
+            for (u64 i = 0; i < n * d * prefixLenUpDown; i++) {
+                sumDis[i] = v_A[i];
+            }
+        }
+        if (lp == 2) {
+            MulRecver mulRecver(n * d * prefixLenUpDown, &sock[1]);
+            std::vector<u64> product(n * d * prefixLenUpDown, 0);
+            std::vector<u64> v_A_1(n * d * prefixLenUpDown, 0);
+            std::vector<u64> v_A_2(n * d * prefixLenUpDown, 0);
+
+            for (u64 i = 0; i < 1 * n * d * 2 * halfprefixLen; i++) {
+                v_A_1[i] = v_A[i];
+                v_A_2[i] = v_A[i + 1 * n * d * 2 * halfprefixLen];
+            }
+
+            mulRecver.mul(v_A_1, product);
+
+            for (u64 i = 0; i < n * d * prefixLenUpDown; i++) {
+                sumDis[i] = 2 * product[i] + v_A_2[i];
+            }
+        }
+
+        std::vector<u64> rand_i_j(n * d, 0);
+
+        MuxRecver mux(n * d * prefixLenUpDown, &sock[1]);
+        mux.muxA(u, sumDis, rand_i_j, prefixLenUpDown);
 
         for (u64 i = 0; i < n; i++) {
             for (u64 j = 0; j < d; j++) {
@@ -914,21 +1172,21 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
         }
 
         for (u64 i = 0; i < n; i++) {
-            auto pre = getPrefix(disR[i], prefixLen);
+            auto pre = getPrefix(disR[i], prefixLenIfmat);
             for (auto &p : pre) {
                 p = p ^ block(i << 32, 0);
                 prefixR.push_back(p);
             }
         }
 
-        PEqTRecver eqRecv(n * prefixLen, 1, false, &sock[1]);
+        PEqTRecver eqRecv(n * prefixLenIfmat, 1, false, &sock[1]);
 
         std::vector<u64> intersection;
 
         eqRecv.eq(prefixR, intersection);
 
         for (auto &v : intersection) {
-            choiceBit[v / prefixLen] = 1;
+            choiceBit[v / prefixLenIfmat] = 1;
         }
     });
 

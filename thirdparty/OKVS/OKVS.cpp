@@ -1,4 +1,5 @@
 #include "OKVS.h"
+#include <cryptoTools/Common/Defines.h>
 #include <cryptoTools/Common/Timer.h>
 #include <vector>
 #include "Defines.h"
@@ -15,8 +16,8 @@ vector<block> OKVS::encode(vector<block> &keys, vector<block> &values, u64 numTh
 
     // if (keys.size() != values.size())
     //     throw RTE_LOC;
-
-    paxos.solve<block>(keys, values, E, nullptr, numThreads);
+    PRNG prng(sysRandomSeed());
+    paxos.solve<block>(keys, values, E, &prng, numThreads);
 
     return E;
 }
