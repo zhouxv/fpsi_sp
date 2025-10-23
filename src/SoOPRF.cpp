@@ -1,7 +1,9 @@
 #include "SoOPRF.h"
+#include <array>
 #include <coproto/Common/macoro.h>
 #include <coproto/Socket/AsioSocket.h>
 #include <macoro/start_on.h>
+#include "secure-join/Defines.h"
 
 SoOPRFSender::SoOPRFSender(uint64_t num_, uint64_t numThreads_, bool useOle_, coproto::Socket *socket_)
     : num(num_), numThreads(numThreads_), useOle(useOle_), socket(socket_)
@@ -15,7 +17,12 @@ SoOPRFSender::SoOPRFSender(uint64_t num_, uint64_t numThreads_, bool useOle_, co
     // socket[1]->setExecutor(*pool);
     prng = new PRNG(oc::ZeroBlock);
 
-    // AltModPrf::KeyType kk;
+    AltModPrf::KeyType senderKey = AltModPrf::KeyType({
+        block(0, 1),
+        block(0, 2),
+        block(0, 3),
+        block(0, 4),
+    });
 
     ole = new CorGenerator();
     ole->init(socket->fork(), *prng, 0, 1, 1 << 18, 1);
@@ -28,7 +35,12 @@ SoOPRFSender::SoOPRFSender(uint64_t num_, uint64_t numThreads_, bool useOle_, co
 
     // sender->setKeyOts(kk, rk);
 
-    sender->init(num, *ole);
+    std::vector<oc::block> rk(AltModPrf::KeySize);
+    for (u64 i = 0; i < AltModPrf::KeySize; ++i) {
+        rk[i] = oc::block(i, *oc::BitIterator((u8 *)&senderKey, i));
+    }
+
+    sender->init(num, *ole, AltModPrfKeyMode::SenderOnly, AltModPrfInputMode::ReceiverOnly, senderKey, rk);
 }
 
 void SoOPRFSender::setup()
@@ -77,8 +89,13 @@ SoOPRFRecver::SoOPRFRecver(uint64_t num_, uint64_t numThreads_, bool useOle_, co
     // }
 
     // recver->setKeyOts(sk);
+    std::vector<std::array<oc::block, 2>> sk(AltModPrf::KeySize);
+    for (u64 i = 0; i < AltModPrf::KeySize; ++i) {
+        sk[i][0] = oc::block(i, 0);
+        sk[i][1] = oc::block(i, 1);
+    }
 
-    recver->init(num, *ole);
+    recver->init(num, *ole, AltModPrfKeyMode::SenderOnly, AltModPrfInputMode::ReceiverOnly, {}, sk);
 };
 
 void SoOPRFRecver::setup()

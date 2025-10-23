@@ -11,7 +11,6 @@
 #include "SoOPPRF.h"
 #include "b2a.h"
 #include "eq.h"
-#include "fmap.h"
 #include "mul.h"
 #include "mux.h"
 #include "secure-join/Prf/AltModPrf.h"
@@ -76,7 +75,7 @@ void LocalMapPrefix(std::vector<std::vector<u64>> &inputs, std::vector<block> &p
 
             if (it != intervals[i].end() && it->first <= elem[i]) {
                 auto interval_index = distance(intervals[i].begin(), it);
-                pid[j] += randR[i * m + interval_index];
+                pid[j] ^= randR[i * m + interval_index];
             } else {
                 std::cout << i << " " << elem[i] << std::endl;
                 throw runtime_error("recv getID random error");

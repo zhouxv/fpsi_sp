@@ -1,6 +1,11 @@
 #include "fmap.h"
+#include <cmath>
 #include <coproto/Socket/AsioSocket.h>
-#include <map>
+#include <cryptoTools/Common/Defines.h>
+#include <cryptoTools/Common/block.h>
+#include <cstdlib>
+#include <iostream>
+#include <vector>
 #include "Defines.h"
 #include "OKVS.h"
 #include "SiOPRF.h"
@@ -22,27 +27,81 @@ void LocalMap(std::vector<std::vector<u64>> &inputs, std::vector<block> &pid, st
 
     pid.resize(m);
 
+    std::vector<std::vector<std::pair<u64, u64>>> intervals(d);
+
+    std::vector<block> randR(m * d);
+    prng.get<block>(randR.data(), randR.size());
+
+    u64 maxInter = 0;
+
+    // Merge overlapping intervals
     for (u64 i = 0; i < d; i++) {
-        std::map<block, block> mp_d;
+        std::vector<std::pair<u64, u64>> interval;
+        interval.reserve(m);
+
+        // get interval [a_i - radius, a_i + radius]
+        for (auto &elem : inputs) {
+            interval.push_back({ elem[i] - delta, elem[i] + delta });
+        }
+
+        // Sort points by x-coordinate; if equal, sort by y-coordinate
+        std::sort(interval.begin(), interval.end());
+
+        for (auto [start, end] : interval) {
+            // If intervals overlap, merge them
+            // If no overlap, add the new interval
+            if (!intervals[i].empty() && start <= intervals[i].back().second) {
+                intervals[i].back().second = max(intervals[i].back().second, end);
+            } else {
+                intervals[i].emplace_back(start, end);
+            }
+            maxInter = max(intervals[i].back().second - intervals[i].back().first, maxInter);
+        }
+        std::cout << "Dimension " << i << " : total intervals = " << intervals[i].size() << std::endl;
+    }
+
+    // gen Local ID
+
+    auto compare_lambda = [](const pair<u64, u64> &a, u64 value) {
+        return a.second < value; // Find the first interval where value <= interval.second
+    };
+
+    for (u64 i = 0; i < d; i++) {
         for (u64 j = 0; j < m; j++) {
-            for (int t = -delta; t <= delta; t++) {
-                block key = block(i, inputs[j][i] + t);
-                block val = prng.get<block>();
-                mp_d[key] = val;
-                if (t == 0) {
-                    pid[j] ^= val;
-                }
+            auto elem = inputs[j];
+
+            auto it = std::lower_bound(intervals[i].begin(), intervals[i].end(), elem[i], compare_lambda);
+
+            if (it != intervals[i].end() && it->first <= elem[i] && elem[i] <= it->second) {
+                auto interval_index = distance(intervals[i].begin(), it);
+                pid[j] ^= randR[i * m + interval_index];
+            } else {
+                std::cout << i << " " << elem[i] << std::endl;
+                throw runtime_error("recv getID random error");
             }
         }
-        for (auto &kv : mp_d) {
-            listKey.push_back(kv.first);
-            listVal.push_back(kv.second);
+    }
+
+    for (u64 i = 0; i < d; i++) {
+        for (u64 j = 0; j < intervals[i].size(); j++) {
+            auto [start, end] = intervals[i][j];
+            for (u64 k = start; k <= end; k++) {
+                block key = block(i, k);
+                block val = randR[i * m + j];
+                listKey.push_back(key);
+                listVal.push_back(val);
+            }
         }
     }
-    while (listKey.size() < (2 * delta + 1) * d * m) {
+
+    if (listKey.size() > d * m * (2 * delta + 1)) {
+        throw runtime_error("something wrong in LocalMap");
+    }
+    while (listKey.size() < d * m * (2 * delta + 1)) {
         listKey.push_back(prng.get<block>());
         listVal.push_back(prng.get<block>());
     }
+    Hash(listKey);
 }
 
 void fuzzyPsi(const oc::CLP &cmd)
@@ -51,16 +110,21 @@ void fuzzyPsi(const oc::CLP &cmd)
     size_t d = cmd.getOr("d", 2);
     int delta = cmd.getOr("delta", 2);
 
+    int interSize = cmd.getOr("nn", 4);
+
     std::vector<std::vector<u64>> sendSet;
     std::vector<block> sendPid;
     std::vector<block> sendListKey;
     std::vector<block> sendListVal;
 
+    PRNG prng(sysRandomSeed());
+
     for (u64 i = 0; i < n; i++) {
         std::vector<u64> tmp;
-        for (u64 j = 0; j < d; j++) {
-            tmp.push_back(i + j);
+        for (u64 j = 0; j < d - 1; j++) {
+            tmp.push_back(prng.get<u64>() + 2 * delta);
         }
+        tmp.push_back(prng.get<u64>() + 2 * delta); // make sure there are some differences
         sendSet.push_back(tmp);
     }
 
@@ -71,10 +135,26 @@ void fuzzyPsi(const oc::CLP &cmd)
 
     for (u64 i = 0; i < n; i++) {
         std::vector<u64> tmp;
-        for (u64 j = 0; j < d; j++) {
-            tmp.push_back(i + j + 5);
+        for (u64 j = 0; j < d - 1; j++) {
+            tmp.push_back(prng.get<u64>() + 2 * delta);
         }
+        tmp.push_back(prng.get<u64>() + 2 * delta); // make sure there are some differences
         recvSet.push_back(tmp);
+    }
+
+    std::vector<u64> interIndices;
+    while (interIndices.size() < interSize) {
+        u64 idx = prng.get<u64>() % n;
+        if (std::find(interIndices.begin(), interIndices.end(), idx) == interIndices.end()) {
+            interIndices.push_back(idx);
+        }
+    }
+
+    for (u64 i = 0; i < interSize; i++) {
+        u64 idx = interIndices[i];
+        for (u64 j = 0; j < d; j++) {
+            recvSet[idx][j] = sendSet[idx][j] + (1 - 2 * (prng.get<u64>() % 2)) * (prng.get<u64>() % (delta + 1));
+        }
     }
 
     std::thread sendLocalMap([&] { LocalMap(sendSet, sendPid, sendListKey, sendListVal, delta); });
@@ -83,7 +163,14 @@ void fuzzyPsi(const oc::CLP &cmd)
     sendLocalMap.join();
     recvLocalMap.join();
 
-    auto dummyOKVS = OKVS(n * d * (2 * delta + 1));
+    auto preOKVS = OKVS(n * d * (2 * delta + 1));
+    AltModPrf::KeyType senderKey = AltModPrf::KeyType({
+        block(0, 1),
+        block(0, 2),
+        block(0, 3),
+        block(0, 4),
+    });
+    AltModPrf prf(senderKey);
     // local encoding from set, totally offline
 
     // fmap start
@@ -91,20 +178,29 @@ void fuzzyPsi(const oc::CLP &cmd)
 
     time.setTimePoint("begin");
 
-    auto dummyEncoding = dummyOKVS.encode(sendListKey, sendListVal);
+    std::vector<block> senderPrfVals(sendListKey.size());
+    std::vector<block> recverPrfVals(recvListKey.size());
+    prf.eval(sendListKey, senderPrfVals);
+    prf.eval(recvListKey, recverPrfVals);
+    for (size_t i = 0; i < sendListKey.size(); i++) {
+        sendListVal[i] = sendListVal[i] ^ senderPrfVals[i];
+        recvListVal[i] = recvListVal[i] ^ recverPrfVals[i];
+    }
 
-    auto s = time.setTimePoint("dummy OKVS done");
+    auto senderOKVS = preOKVS.encode(sendListKey, sendListVal);
+    auto recverOKVS = preOKVS.encode(recvListKey, recvListVal);
+
+    auto s = time.setTimePoint("offline preprocess OKVS done");
 
     auto sock = coproto::AsioSocket::makePair();
     auto sock2 = coproto::AsioSocket::makePair();
 
-    std::vector<block> rand_R_j(n);
-    std::vector<block> rand_S_j(n);
+    std::vector<block> rand_R_j(n, ZeroBlock);
+    std::vector<block> rand_S_j(n, ZeroBlock);
 
     std::vector<block> ID_R(n);
     std::vector<block> ID_S(n);
 
-    PRNG prng(ZeroBlock);
     AltModPrf RO(prng.get());
     auto key = RO.mExpandedKey;
     AltModPrf::KeyType k1 = prng.get();
@@ -121,6 +217,7 @@ void fuzzyPsi(const oc::CLP &cmd)
         }
         std::vector<block> rand_S(n * d);
 
+        Hash(inputs);
         recv.OPPRF(inputs, rand_S);
 
         for (u64 i = 0; i < n; i++) {
@@ -137,7 +234,7 @@ void fuzzyPsi(const oc::CLP &cmd)
         std::vector<block> rand_R(n * d);
 
         // send.OPPRF(recvListKey, recvListVal, rand_R);
-        send.OPPRF(dummyEncoding, rand_R);
+        send.OPPRF(recverOKVS, rand_R);
 
         for (u64 i = 0; i < n; i++) {
             for (u64 j = 0; j < d; j++) {
@@ -182,8 +279,8 @@ void fuzzyPsi(const oc::CLP &cmd)
 
     time.setTimePoint("siOPRF Reverse done");
 
-    rand_R_j = std::vector<block>(n);
-    rand_S_j = std::vector<block>(n);
+    rand_R_j = std::vector<block>(n, ZeroBlock);
+    rand_S_j = std::vector<block>(n, ZeroBlock);
 
     std::thread sendSoOPPRF([&] {
         SoOPPRFSender send(n * d, n * d * (2 * delta + 1), 1, false, &sock[0]);
@@ -191,7 +288,7 @@ void fuzzyPsi(const oc::CLP &cmd)
         std::vector<block> rand_S(n * d);
 
         // send.OPPRF(sendListKey, sendListVal, rand_S);
-        send.OPPRF(dummyEncoding, rand_S);
+        send.OPPRF(senderOKVS, rand_S);
 
         for (u64 i = 0; i < n; i++) {
             for (u64 j = 0; j < d; j++) {
@@ -211,6 +308,7 @@ void fuzzyPsi(const oc::CLP &cmd)
         }
         std::vector<block> rand_R(n * d);
 
+        Hash(inputs);
         recv.OPPRF(inputs, rand_R);
 
         for (u64 i = 0; i < n; i++) {
@@ -256,6 +354,10 @@ void fuzzyPsi(const oc::CLP &cmd)
     recvSiOPRF.join();
 
     time.setTimePoint("siOPRF done");
+
+    // for (u64 i = 0; i < n; i++) {
+    //     std::cout << "Sender ID: " << ID_S[i] << " Receiver ID: " << ID_R[i] << " " << i << std::endl;
+    // }
 
     rand_R_j = std::vector<block>(n);
     rand_S_j = std::vector<block>(n);
@@ -396,6 +498,17 @@ void fuzzyPsi(const oc::CLP &cmd)
 
     auto e = time.setTimePoint("OT done");
 
+    for (int i = 0; i < choiceBit.size(); i++) {
+        if (choiceBit[i]) {
+            std::cout << "intersection at index " << i << std::endl;
+        }
+        if (choiceBit[i] && std::find(interIndices.begin(), interIndices.end(), i) == interIndices.end()) {
+            throw runtime_error("false positive in fuzzyPsi");
+        }
+    }
+
+    std::cout << "All matches found!" << std::endl;
+
     std::cout << time << std::endl;
 
     std::cout << "comm: " << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB, "
@@ -408,20 +521,24 @@ void fuzzyPsiLp(const oc::CLP &cmd)
     size_t d = cmd.getOr("d", 2);
     int delta = cmd.getOr("delta", 2);
     int lp = cmd.getOr("p", 2);
+    int interSize = cmd.getOr("nn", 4);
 
     u64 delta_p = std::pow(delta, lp);
-    int prefixLen = static_cast<int>(std::floor(std::log2(delta_p * 2 - 1))) + 1;
+    int prefixLen = static_cast<int>(std::ceil(std::log2(delta_p + 1)));
 
     std::vector<std::vector<u64>> sendSet;
     std::vector<block> sendPid;
     std::vector<block> sendListKey;
     std::vector<block> sendListVal;
 
+    PRNG prng(sysRandomSeed());
+
     for (u64 i = 0; i < n; i++) {
         std::vector<u64> tmp;
-        for (u64 j = 0; j < d; j++) {
-            tmp.push_back(i + j);
+        for (u64 j = 0; j < d - 1; j++) {
+            tmp.push_back(prng.get<u64>() + 2 * delta);
         }
+        tmp.push_back(prng.get<u64>() + 2 * delta); // make sure there are some differences
         sendSet.push_back(tmp);
     }
 
@@ -432,10 +549,28 @@ void fuzzyPsiLp(const oc::CLP &cmd)
 
     for (u64 i = 0; i < n; i++) {
         std::vector<u64> tmp;
-        for (u64 j = 0; j < d; j++) {
-            tmp.push_back(i + j + 5);
+        for (u64 j = 0; j < d - 1; j++) {
+            tmp.push_back(prng.get<u64>() + 2 * delta);
         }
+        tmp.push_back(prng.get<u64>() + 2 * delta); // make sure there are some differences
         recvSet.push_back(tmp);
+    }
+
+    std::vector<u64> interIndices;
+    while (interIndices.size() < interSize) {
+        u64 idx = prng.get<u64>() % n;
+        if (std::find(interIndices.begin(), interIndices.end(), idx) == interIndices.end()) {
+            interIndices.push_back(idx);
+        }
+    }
+
+    int averageDiff = std::floor(delta / std::sqrt(d));
+
+    for (u64 i = 0; i < interSize; i++) {
+        u64 idx = interIndices[i];
+        for (u64 j = 0; j < d; j++) {
+            recvSet[idx][j] = sendSet[idx][j] + (1 - 2 * (prng.get<u64>() % 2)) * (prng.get<u64>() % (averageDiff + 1));
+        }
     }
 
     std::thread sendLocalMap([&] { LocalMap(sendSet, sendPid, sendListKey, sendListVal, delta); });
@@ -444,7 +579,14 @@ void fuzzyPsiLp(const oc::CLP &cmd)
     sendLocalMap.join();
     recvLocalMap.join();
 
-    auto dummyOKVS = OKVS(n * d * (2 * delta + 1));
+    auto preOKVS = OKVS(n * d * (2 * delta + 1));
+    AltModPrf::KeyType senderKey = AltModPrf::KeyType({
+        block(0, 1),
+        block(0, 2),
+        block(0, 3),
+        block(0, 4),
+    });
+    AltModPrf prf(senderKey);
     // local encoding from set, totally offline
 
     // fmap start
@@ -452,9 +594,19 @@ void fuzzyPsiLp(const oc::CLP &cmd)
 
     time.setTimePoint("begin");
 
-    auto dummyEncoding = dummyOKVS.encode(sendListKey, sendListVal);
+    std::vector<block> senderPrfVals(sendListKey.size());
+    std::vector<block> recverPrfVals(recvListKey.size());
+    prf.eval(sendListKey, senderPrfVals);
+    prf.eval(recvListKey, recverPrfVals);
+    for (size_t i = 0; i < sendListKey.size(); i++) {
+        sendListVal[i] = sendListVal[i] ^ senderPrfVals[i];
+        recvListVal[i] = recvListVal[i] ^ recverPrfVals[i];
+    }
 
-    auto s = time.setTimePoint("dummy OKVS done");
+    auto senderOKVS = preOKVS.encode(sendListKey, sendListVal);
+    auto recverOKVS = preOKVS.encode(recvListKey, recvListVal);
+
+    auto s = time.setTimePoint("offline preprocess OKVS done");
 
     auto sock = coproto::AsioSocket::makePair();
     auto sock2 = coproto::AsioSocket::makePair();
@@ -465,7 +617,6 @@ void fuzzyPsiLp(const oc::CLP &cmd)
     std::vector<block> ID_R(n);
     std::vector<block> ID_S(n);
 
-    PRNG prng(ZeroBlock);
     AltModPrf RO(prng.get());
     auto key = RO.mExpandedKey;
     AltModPrf::KeyType k1 = prng.get();
@@ -499,7 +650,7 @@ void fuzzyPsiLp(const oc::CLP &cmd)
         std::vector<block> rand_R(n * d);
 
         // send.OPPRF(recvListKey, recvListVal, rand_R);
-        send.OPPRF(dummyEncoding, rand_R);
+        send.OPPRF(recverOKVS, rand_R);
 
         for (u64 i = 0; i < n; i++) {
             for (u64 j = 0; j < d; j++) {
@@ -553,7 +704,7 @@ void fuzzyPsiLp(const oc::CLP &cmd)
         std::vector<block> rand_S(n * d);
 
         // send.OPPRF(sendListKey, sendListVal, rand_S);
-        send.OPPRF(dummyEncoding, rand_S);
+        send.OPPRF(senderOKVS, rand_S);
 
         for (u64 i = 0; i < n; i++) {
             for (u64 j = 0; j < d; j++) {
@@ -573,6 +724,7 @@ void fuzzyPsiLp(const oc::CLP &cmd)
         }
         std::vector<block> rand_R(n * d);
 
+        Hash(inputs);
         recv.OPPRF(inputs, rand_R);
 
         for (u64 i = 0; i < n; i++) {
@@ -677,7 +829,7 @@ void fuzzyPsiLp(const oc::CLP &cmd)
                 prefixS.push_back(p);
             }
         }
-        while (prefixS.size() != (n * prefixLen)) {
+        while (prefixS.size() < (n * prefixLen)) {
             prefixS.push_back(prng.get<block>());
         }
 
@@ -695,7 +847,7 @@ void fuzzyPsiLp(const oc::CLP &cmd)
             for (int j = 0; j < d; j++) {
                 for (int t = -delta; t <= delta; t++) {
                     block key = (ID_R[i] << 8) ^ block(j, recvSet[i][j] + t);
-                    block val = ZeroBlock;
+                    block val = block(0, std::pow(std::abs(t), lp));
                     filterKey[idx] = key;
                     filterVal[idx] = val;
                     idx++;
@@ -802,6 +954,17 @@ void fuzzyPsiLp(const oc::CLP &cmd)
     recvOT.join();
 
     auto e = time.setTimePoint("OT done");
+
+    for (int i = 0; i < choiceBit.size(); i++) {
+        if (choiceBit[i]) {
+            std::cout << "intersection at index " << i << std::endl;
+        }
+        if (choiceBit[i] && std::find(interIndices.begin(), interIndices.end(), i) == interIndices.end()) {
+            throw runtime_error("false positive in fuzzyPsi");
+        }
+    }
+
+    std::cout << "All matches found!" << std::endl;
 
     std::cout << time << std::endl;
 

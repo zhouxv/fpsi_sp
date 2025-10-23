@@ -120,20 +120,20 @@ void inline Hash(std::vector<block> &input)
     auto r = input.data();
 
     for (u64 i = 0; i < n8; i += 8) {
-        r[0] = r[0] & mask;
-        r[1] = r[1] & mask;
-        r[2] = r[2] & mask;
-        r[3] = r[3] & mask;
-        r[4] = r[4] & mask;
-        r[5] = r[5] & mask;
-        r[6] = r[6] & mask;
-        r[7] = r[7] & mask;
+        // r[0] = r[0] & mask;
+        // r[1] = r[1] & mask;
+        // r[2] = r[2] & mask;
+        // r[3] = r[3] & mask;
+        // r[4] = r[4] & mask;
+        // r[5] = r[5] & mask;
+        // r[6] = r[6] & mask;
+        // r[7] = r[7] & mask;
 
         oc::mAesFixedKey.hashBlocks<8>(r, r);
         r += 8;
     }
     for (u64 i = n8; i < input.size(); i++) {
-        input[i] = input[i] & mask;
+        // input[i] = input[i] & mask;
         input[i] = oc::mAesFixedKey.hashBlock(input[i]);
     }
 }

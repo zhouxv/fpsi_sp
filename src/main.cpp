@@ -638,7 +638,7 @@ void SoOPPRF_test()
     SoOPPRFSender sender(1 << 20, 1 << 20, 1, false, &sock0[0]);
     SoOPPRFRecver recver(1 << 20, 1 << 20, 1, false, &sock0[1]);
 
-    PRNG prng(oc::ZeroBlock);
+    PRNG prng(sysRandomSeed());
     std::vector<oc::block> keys0(1 << 20);
     std::vector<oc::block> vals0(1 << 20);
     std::vector<oc::block> keys1(1 << 20);
@@ -646,7 +646,7 @@ void SoOPPRF_test()
 
     prng.get<oc::block>(keys0);
     prng.get<oc::block>(vals0);
-    memcpy(keys1.data(), keys0.data(), keys0.size() * sizeof(block));
+    memcpy(keys1.data(), keys0.data(), (1 << 10) * sizeof(block));
 
     std::thread thread_sender([&] { sender.OPPRF(keys0, vals0, y0); });
 
@@ -655,7 +655,7 @@ void SoOPPRF_test()
     thread_sender.join();
     thread_recver.join();
 
-    for (int i = 0; i < (1 << 20); i++) {
+    for (int i = 0; i < (1 << 10); i++) {
         if ((y0[i] ^ y1[i]) != vals0[i]) {
             std::cout << "i   " << i << std::endl;
             std::cout << "act " << (y0[i] ^ y1[i]) << std::endl;

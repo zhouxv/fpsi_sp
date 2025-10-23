@@ -62,7 +62,7 @@ void SoOPPRFRecver::OPPRF(std::vector<oc::block> &keys, std::vector<oc::block> &
 
     auto d = okvs->decode(encoding, keys);
 
-    for (u64 i = 0; i < d.size(); ++i) {
+    for (u64 i = 0; i < keys.size(); i++) {
         y1[i] = d[i] ^ tmp[i];
     }
 }
