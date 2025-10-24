@@ -43,18 +43,25 @@ void B2aSender::b2a(std::vector<block> &blk, std::vector<u64> &val)
 
     std::vector<u64> correctMessages(numOts);
 
+    std::vector<u8> compressedBits;
+
     for (int i = 0; i < numOts; i++) {
         u8 bit = bits[i];
+        int shift = i % 64;
         u64 mask = low(messages[i][0]) + u64(bit);
-        correctMessages[i] = low(messages[i][1]) ^ mask;
+        correctMessages[i] = (low(messages[i][1]) ^ mask) << shift >> shift;
+        for (int j = 0; j < 8 - shift / 8; j++) {
+            compressedBits.push_back(static_cast<uint8_t>(correctMessages[i] >> (8 * j)) & 0xFF);
+        }
     }
 
     for (int i = 0; i < numOts; i++) {
         u8 bit = bits[i];
-        val[i / 64] += (u64(bit) + 2 * low(messages[i][0])) << (i % 64);
+        int shift = i % 64;
+        val[i / 64] += (u64(bit) + 2 * ((low(messages[i][0]) << shift) >> shift)) << shift;
     }
 
-    coproto::sync_wait(socket->send(correctMessages));
+    coproto::sync_wait(socket->send(compressedBits));
 
     auto end_comm = socket->bytesReceived() + socket->bytesSent();
     std::cout << "b2a comm: " << (end_comm - curr_comm) / 1024.0 / 1024.0 << " MB " << std::endl;
@@ -96,13 +103,21 @@ void B2aRecver::b2a(std::vector<block> &blk, std::vector<u64> &val)
 
     std::vector<u64> correctMessages(numOts);
 
-    coproto::sync_wait(socket->recv(correctMessages));
+    std::vector<u8> compressedBits;
 
+    coproto::sync_wait(socket->recvResize(compressedBits));
+
+    u64 offset = 0;
     for (int i = 0; i < numOts; i++) {
+        u64 msg = 0;
+        int shift = i % 64;
+        for (int j = 0; j < 8 - shift / 8; j++) {
+            msg |= u64(compressedBits[offset++]) << (8 * j);
+        }
         if (choiceBit[i] & 1) {
-            val[i / 64] += (u64(choiceBit[i]) - 2 * (low(messages[i]) ^ correctMessages[i])) << (i % 64);
+            val[i / 64] += (u64(choiceBit[i]) - 2 * (((low(messages[i]) ^ msg) << shift) >> shift)) << shift;
         } else {
-            val[i / 64] += (u64(choiceBit[i]) - 2 * low(messages[i])) << (i % 64);
+            val[i / 64] += (u64(choiceBit[i]) - 2 * ((low(messages[i]) << shift) >> shift)) << shift;
         }
     }
 }

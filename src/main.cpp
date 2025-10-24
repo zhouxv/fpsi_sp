@@ -34,6 +34,7 @@
 #include "mux.h"
 #include "secure-join/Prf/AltModPrf.h"
 #include "secure-join/Prf/AltModPrfProto.h"
+#include "utils.h"
 
 using namespace secJoin;
 
@@ -831,22 +832,22 @@ int main(int argc, char **argv)
 
     // eq_test();
 
-    // int lp = cmd.getOr("p", 0);
+    int lp = cmd.getOr("p", 0);
 
-    // if (lp != 0) {
-    //     if (cmd.isSet("prefix")) {
-    //         fuzzyPsiLpPrefix(cmd);
-    //     } else {
-    //         fuzzyPsiLp(cmd);
-    //     }
-    // } else {
-    //     if (cmd.isSet("prefix")) {
-    //         fuzzyPsiPrefix(cmd);
-    //     } else {
-    //         fuzzyPsi(cmd);
-    //     }
-    // }
-    // return 0;
+    if (lp != 0) {
+        if (cmd.isSet("prefix")) {
+            fuzzyPsiLpPrefix(cmd);
+        } else {
+            fuzzyPsiLp(cmd);
+        }
+    } else {
+        if (cmd.isSet("prefix")) {
+            fuzzyPsiPrefix(cmd);
+        } else {
+            fuzzyPsi(cmd);
+        }
+    }
+    return 0;
 
     // SilentOtExtSender sender;
     // SilentOtExtReceiver recver;
@@ -899,7 +900,7 @@ int main(int argc, char **argv)
 
     auto sock = coproto::LocalAsyncSocket::makePair();
 
-    int n = 1;
+    int n = 1 << 20;
 
     B2aSender sender(n, &sock[0]);
     B2aRecver recver(n, &sock[1]);
@@ -913,14 +914,12 @@ int main(int argc, char **argv)
 
     PRNG prng(oc::sysRandomSeed());
 
-    // for (int i = 0; i < n; i++) {
-    //     blk0[i] = block(1, 1);
-    //     blk1[i] = block(1, 1234);
-    //     v0[i] = block(1, 0);
-    //     v1[i] = block(0, 1);
-    // }
-    blk0[0] = block(0, 2);
-    blk1[0] = block(0, 1);
+    for (int i = 0; i < n; i++) {
+        blk0[i] = block(0, 7);
+        blk1[i] = block(0, 9);
+    }
+    // blk0[0] = block(0, 12);
+    // blk1[0] = block(0, 8);
 
     // std::vector<u64> val0(n);
     // std::vector<u64> val1(n);
@@ -942,9 +941,14 @@ int main(int argc, char **argv)
     thread_recver.join();
 
     timer.setTimePoint("silent end");
+    std::cout << timer << std::endl;
 
-    for (int i = 0; i < 1; i++) {
-        std::cout << (val0[i] + val1[i]) << std::endl;
+    for (int i = 0; i < n; i++) {
+        // std::cout << (val0[i] + val1[i]) << std::endl;
+        if ((val0[i] + val1[i]) != (low(blk0[i]) ^ low(blk1[i]))) {
+            std::cout << "error at " << i << std::endl;
+            std::cout << (val0[i] + val1[i]) << " " << (low(blk0[i]) + low(blk1[i])) << std::endl;
+        }
         // std::cout << low(blk[i]) << std::endl;
     }
 
