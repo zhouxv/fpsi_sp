@@ -116,6 +116,7 @@ void LocalMapPrefix(std::vector<std::vector<u64>> &inputs, std::vector<block> &p
         listKey.push_back(prng.get<block>());
         listVal.push_back(prng.get<block>());
     }
+    Hash(listKey);
 }
 
 void fuzzyPsiPrefix(const oc::CLP &cmd)
@@ -237,6 +238,7 @@ void fuzzyPsiPrefix(const oc::CLP &cmd)
 
         std::vector<block> rand_S(2 * n * d * prefixLen);
 
+        Hash(inputs);
         recv.OPPRF(inputs, rand_S);
 
         std::vector<block> u(n * d * prefixLen);
@@ -373,6 +375,7 @@ void fuzzyPsiPrefix(const oc::CLP &cmd)
         }
         std::vector<block> rand_R(2 * n * d * prefixLen);
 
+        Hash(inputs);
         recv.OPPRF(inputs, rand_R);
 
         std::vector<block> u(n * d * prefixLen);
@@ -644,6 +647,8 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
 
     int prefixLenUpDown = 2 * static_cast<int>(std::ceil(std::log2(delta + 1)));
 
+    int interSize = cmd.getOr("nn", 4);
+
     std::vector<std::vector<u64>> sendSet;
     std::vector<block> sendPid;
     std::vector<block> sendListKey;
@@ -674,24 +679,56 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
         recvSet.push_back(tmp);
     }
 
+    std::vector<u64> interIndices;
+    while (interIndices.size() < interSize) {
+        u64 idx = prng.get<u64>() % n;
+        if (std::find(interIndices.begin(), interIndices.end(), idx) == interIndices.end()) {
+            interIndices.push_back(idx);
+        }
+    }
+
+    int averageDiff = (lp == 2) ? std::floor(delta * 1.0 / std::sqrt(d)) : std::floor(delta * 1.0 / d);
+
+    for (u64 i = 0; i < interSize; i++) {
+        u64 idx = interIndices[i];
+        for (u64 j = 0; j < d; j++) {
+            recvSet[idx][j] = sendSet[idx][j] + (1 - 2 * (prng.get<u64>() % 2)) * (prng.get<u64>() % (averageDiff + 1));
+        }
+    }
+
     std::thread sendLocalMap([&] { LocalMapPrefix(sendSet, sendPid, sendListKey, sendListVal, delta); });
     std::thread recvLocalMap([&] { LocalMapPrefix(recvSet, recvPid, recvListKey, recvListVal, delta); });
 
     sendLocalMap.join();
     recvLocalMap.join();
 
-    auto dummyOKVS = OKVS(n * d * prefixLen);
-
-    // local encoding from set, totally offline
+    auto preOKVS = OKVS(2 * n * d * prefixLen);
+    AltModPrf::KeyType senderKey = AltModPrf::KeyType({
+        block(0, 1),
+        block(0, 2),
+        block(0, 3),
+        block(0, 4),
+    });
+    AltModPrf prf(senderKey); // local encoding from set, totally offline
 
     // fmap start
     oc::Timer time;
 
     time.setTimePoint("begin");
 
-    auto dummyEncoding = dummyOKVS.encode(sendListKey, sendListVal);
+    std::vector<block> senderPrfVals(sendListKey.size());
+    std::vector<block> recverPrfVals(recvListKey.size());
+    prf.eval(sendListKey, senderPrfVals);
+    prf.eval(recvListKey, recverPrfVals);
+    for (size_t i = 0; i < sendListKey.size(); i++) {
+        sendListVal[i] = sendListVal[i] ^ senderPrfVals[i];
+        recvListVal[i] = recvListVal[i] ^ recverPrfVals[i];
+    }
 
-    auto s = time.setTimePoint("dummy OKVS done");
+    auto senderOKVS = preOKVS.encode(sendListKey, sendListVal);
+    auto recverOKVS = preOKVS.encode(recvListKey, recvListVal);
+
+    auto s = time.setTimePoint("offline preprocess OKVS done");
 
     auto sock = coproto::AsioSocket::makePair();
     auto sock2 = coproto::AsioSocket::makePair();
@@ -708,72 +745,71 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
     AltModPrf::KeyType k0 = k1 ^ key;
 
     std::thread sendSoOPPRFReverse([&] {
-        SoOPPRFRecver recv(n * d * prefixLen, n * d * prefixLen, 1, false, &sock[0]);
+        SoOPPRFRecver recv(2 * n * d * prefixLen, 2 * n * d * prefixLen, 1, false, &sock[0]);
 
-        std::vector<block> inputs(n * d * prefixLen);
+        std::vector<block> inputs(2 * n * d * prefixLen);
         for (u64 i = 0; i < n; i++) {
             for (u64 j = 0; j < d; j++) {
                 auto prefixes = getPrefix(sendSet[i][j], prefixLen);
                 for (int k = 0; k < prefixLen; k++) {
                     inputs[i * d * prefixLen + j * prefixLen + k] = block(j << 32, 0) ^ prefixes[k];
+                    inputs[(n + i) * d * prefixLen + j * prefixLen + k] = block((1 << 16) | (j << 32), 0) ^ prefixes[k];
                 }
             }
         }
-        std::vector<block> rand_S(n * d * prefixLen);
 
+        std::vector<block> rand_S(2 * n * d * prefixLen);
+
+        Hash(inputs);
         recv.OPPRF(inputs, rand_S);
 
         std::vector<block> u(n * d * prefixLen);
         std::vector<block> v(n * d * prefixLen);
 
         for (u64 i = 0; i < n * d * prefixLen; i++) {
-            u[i] = block(0, high(rand_S[i]));
-            v[i] = block(0, low(rand_S[i]));
+            u[i] = rand_S[i];
+            v[i] = rand_S[i + n * d * prefixLen];
         }
 
         MuxSender mux(n * d * prefixLen, &sock[0]);
 
-        std::vector<block> t(n * d * prefixLen);
+        std::vector<block> t(n * d);
 
-        mux.mux(u, v, t);
+        mux.mux(u, v, t, prefixLen);
 
         for (u64 i = 0; i < n; i++) {
             for (u64 j = 0; j < d; j++) {
-                for (int k = 0; k < prefixLen; k++) {
-                    rand_S_j[i] ^= t[i * d * prefixLen + j * prefixLen + k];
-                }
+                rand_S_j[i] ^= t[i * d + j];
             }
             rand_S_j[i] = rand_S_j[i] ^ sendPid[i];
         }
     });
 
     std::thread recvSoOPPRFReverse([&] {
-        SoOPPRFSender send(n * d * prefixLen, n * d * prefixLen, 1, false, &sock[1]);
+        SoOPPRFSender send(2 * n * d * prefixLen, 2 * n * d * prefixLen, 1, false, &sock[1]);
 
-        std::vector<block> rand_R(n * d * prefixLen);
+        std::vector<block> rand_R(2 * n * d * prefixLen);
 
         // send.OPPRF(recvListKey, recvListVal, rand_R);
-        send.OPPRF(dummyEncoding, rand_R);
+        send.OPPRF(recverOKVS, rand_R);
 
         std::vector<block> u(n * d * prefixLen);
         std::vector<block> v(n * d * prefixLen);
 
         for (u64 i = 0; i < n * d * prefixLen; i++) {
-            u[i] = block(0, high(rand_R[i]));
-            v[i] = block(0, low(rand_R[i]));
+            u[i] = rand_R[i];
+            v[i] = rand_R[i + n * d * prefixLen];
         }
 
         MuxRecver mux(n * d * prefixLen, &sock[1]);
 
-        std::vector<block> t(n * d * prefixLen);
+        std::vector<block> t(n * d);
 
-        mux.mux(u, v, t);
+        mux.mux(u, v, t, prefixLen);
 
         for (u64 i = 0; i < n; i++) {
             for (u64 j = 0; j < d; j++) {
-                for (int k = 0; k < prefixLen; k++) {
-                    rand_R_j[i] ^= t[i * d * prefixLen + j * prefixLen + k];
-                }
+                rand_R_j[i] ^= t[i * d + j];
             }
         }
     });
@@ -814,75 +850,73 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
 
     time.setTimePoint("siOPRF Reverse done");
 
-    rand_R_j = std::vector<block>(n);
-    rand_S_j = std::vector<block>(n);
+    rand_R_j = std::vector<block>(n, ZeroBlock);
+    rand_S_j = std::vector<block>(n, ZeroBlock);
 
     std::thread sendSoOPPRF([&] {
-        SoOPPRFSender send(n * d * prefixLen, n * d * prefixLen, 1, false, &sock[0]);
+        SoOPPRFSender send(2 * n * d * prefixLen, 2 * n * d * prefixLen, 1, false, &sock[0]);
 
-        std::vector<block> rand_S(n * d * prefixLen);
+        std::vector<block> rand_S(2 * n * d * prefixLen);
 
         // send.OPPRF(sendListKey, sendListVal, rand_S);
-        send.OPPRF(dummyEncoding, rand_S);
+        send.OPPRF(senderOKVS, rand_S);
 
         std::vector<block> u(n * d * prefixLen);
         std::vector<block> v(n * d * prefixLen);
 
         for (u64 i = 0; i < n * d * prefixLen; i++) {
-            u[i] = block(0, high(rand_S[i]));
-            v[i] = block(0, low(rand_S[i]));
+            u[i] = rand_S[i];
+            v[i] = rand_S[i + n * d * prefixLen];
         }
 
         MuxSender mux(n * d * prefixLen, &sock[0]);
 
-        std::vector<block> t(n * d * prefixLen);
+        std::vector<block> t(n * d);
 
-        mux.mux(u, v, t);
+        mux.mux(u, v, t, prefixLen);
 
         for (u64 i = 0; i < n; i++) {
             for (u64 j = 0; j < d; j++) {
-                for (int k = 0; k < prefixLen; k++) {
-                    rand_S_j[i] ^= t[i * d * prefixLen + j * prefixLen + k];
-                }
+                rand_S_j[i] ^= t[i * d + j];
             }
         }
     });
 
     std::thread recvSoOPPRF([&] {
-        SoOPPRFRecver recv(n * d * prefixLen, n * d * prefixLen, 1, false, &sock[1]);
+        SoOPPRFRecver recv(2 * n * d * prefixLen, 2 * n * d * prefixLen, 1, false, &sock[1]);
 
-        std::vector<block> inputs(n * d * prefixLen);
+        std::vector<block> inputs(2 * n * d * prefixLen);
         for (u64 i = 0; i < n; i++) {
             for (u64 j = 0; j < d; j++) {
                 auto prefixes = getPrefix(recvSet[i][j], prefixLen);
                 for (int k = 0; k < prefixLen; k++) {
                     inputs[i * d * prefixLen + j * prefixLen + k] = block(j << 32, 0) ^ prefixes[k];
+                    inputs[(n + i) * d * prefixLen + j * prefixLen + k] = block((1 << 16) | (j << 32), 0) ^ prefixes[k];
                 }
             }
         }
-        std::vector<block> rand_R(n * d * prefixLen);
+        std::vector<block> rand_R(2 * n * d * prefixLen);
 
+        Hash(inputs);
         recv.OPPRF(inputs, rand_R);
 
         std::vector<block> u(n * d * prefixLen);
         std::vector<block> v(n * d * prefixLen);
 
         for (u64 i = 0; i < n * d * prefixLen; i++) {
-            u[i] = block(0, high(rand_R[i]));
-            v[i] = block(0, low(rand_R[i]));
+            u[i] = rand_R[i];
+            v[i] = rand_R[i + n * d * prefixLen];
         }
 
         MuxRecver mux(n * d * prefixLen, &sock[1]);
 
-        std::vector<block> t(n * d * prefixLen);
+        std::vector<block> t(n * d);
 
-        mux.mux(u, v, t);
+        mux.mux(u, v, t, prefixLen);
 
         for (u64 i = 0; i < n; i++) {
             for (u64 j = 0; j < d; j++) {
-                for (int k = 0; k < prefixLen; k++) {
-                    rand_R_j[i] ^= t[i * d * prefixLen + j * prefixLen + k];
-                }
+                rand_R_j[i] ^= t[i * d + j];
             }
             rand_R_j[i] = rand_R_j[i] ^ recvPid[i];
         }
@@ -924,6 +958,16 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
 
     time.setTimePoint("siOPRF done");
 
+    // for (u64 i = 0; i < n; i++) {
+    //     std::cout << "Sender ID: " << ID_S[i] << " Receiver ID: " << ID_R[i] << " ";
+    //     if (ID_S[i] == ID_R[i]) {
+    //         std::cout << "<-- in intersection"
+    //                   << " " << i << std::endl;
+    //     } else {
+    //         std::cout << std::endl;
+    //     }
+    // }
+
     rand_R_j = std::vector<block>(n);
     rand_S_j = std::vector<block>(n);
 
@@ -953,7 +997,7 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
                     for (int s = 0; s < 2; s++) {
                         for (int k = 0; k < halfprefixLen; k++) {
                             auto idx = batch * n * d * halfprefixLen * 2 + i * d * halfprefixLen * 2 + j * halfprefixLen * 2 + s * halfprefixLen + k;
-                            inputs[idx] = (ID_S[i] << 76) ^ block((j << 8) | (batch << 6) | (s << 4), 0) ^ prefixes[k]; //  batch, i, j, s, k
+                            inputs[idx] = block(high(ID_S[i]) << 12, 0) ^ block((j << 8) | (batch << 6) | (s << 4), 0) ^ prefixes[k]; //  batch, i, j, s, k
                         }
                     }
                 }
@@ -1028,7 +1072,8 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
                 auto prefixes = getPrefix(sendSet[i][j], halfprefixLen);
                 for (int s = 0; s < 2; s++) {
                     for (int k = 0; k < halfprefixLen; k++) {
-                        e[i * d * prefixLenUpDown + j * prefixLenUpDown + s * halfprefixLen + k] = (s == 0) ? upBound(prefixes[k]) : 0 - upBound(prefixes[k]);
+                        e[i * d * prefixLenUpDown + j * prefixLenUpDown + s * halfprefixLen + k] =
+                            (s == 0) ? upBound(prefixes[k]) - sendSet[i][j] : sendSet[i][j] - upBound(prefixes[k]);
                     }
                 }
             }
@@ -1066,6 +1111,7 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
             for (u64 j = 0; j < d; j++) {
                 disS[i] += rand_i_j[i * d + j];
             }
+            // disS[i] = v_A[i];
         }
 
         for (u64 i = 0; i < n; i++) {
@@ -1095,7 +1141,7 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
                 for (auto &p : prefixes0) {
                     auto upbound = upBound(p);
                     for (int batch = 0; batch < OkvsBatch; batch++) {
-                        block key = (ID_S[i] << 76) ^ block((j << 8) | (batch << 6) | (0 << 4), 0) ^ p;
+                        block key = block(high(ID_R[i]) << 12, 0) ^ block((j << 8) | (batch << 6) | (0 << 4), 0) ^ p;
                         block val = ZeroBlock;
                         if (batch == 0) {
                             val = block(0, std::pow(recvSet[i][j] - upbound, batch + 1));
@@ -1109,7 +1155,7 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
                 for (auto &p : prefixes1) {
                     auto upbound = upBound(p);
                     for (int batch = 0; batch < OkvsBatch; batch++) {
-                        block key = (ID_S[i] << 76) ^ block((j << 8) | (batch << 6) | (1 << 4), 0) ^ p;
+                        block key = block(high(ID_R[i]) << 12, 0) ^ block((j << 8) | (batch << 6) | (1 << 4), 0) ^ p;
                         block val = ZeroBlock;
                         if (batch == 0) {
                             val = block(0, std::pow(upbound - recvSet[i][j], batch + 1));
@@ -1163,14 +1209,12 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
             throw std::runtime_error("lp not supported");
         }
 
-        std::vector<u64> rand_R_A(n * d);
-
         std::vector<u64> v_A(n * d * prefixLenUpDown * lp);
 
         B2aRecver b2aRecver(n * d * prefixLenUpDown * lp, &sock[1]);
         b2aRecver.b2a(v, v_A);
 
-        std::vector<u64> sumDis(n * d * prefixLenUpDown);
+        std::vector<u64> sumDis(n * d * prefixLenUpDown, 0);
 
         if (lp == 1) {
             for (u64 i = 0; i < n * d * prefixLenUpDown; i++) {
@@ -1202,8 +1246,9 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
 
         for (u64 i = 0; i < n; i++) {
             for (u64 j = 0; j < d; j++) {
-                disR[i] += rand_R_A[i * d + j];
+                disR[i] += rand_i_j[i * d + j];
             }
+            // disR[i] = v_A[i];
         }
 
         for (u64 i = 0; i < n; i++) {
@@ -1288,6 +1333,15 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
     recvOT.join();
 
     auto e = time.setTimePoint("OT done");
+
+    for (int i = 0; i < choiceBit.size(); i++) {
+        if (choiceBit[i]) {
+            std::cout << "intersection at index " << i << std::endl;
+        }
+        if (choiceBit[i] && std::find(interIndices.begin(), interIndices.end(), i) == interIndices.end()) {
+            throw runtime_error("false positive in fuzzyPsi");
+        }
+    }
 
     std::cout << time << std::endl;
 

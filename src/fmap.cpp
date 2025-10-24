@@ -564,7 +564,7 @@ void fuzzyPsiLp(const oc::CLP &cmd)
         }
     }
 
-    int averageDiff = std::floor(delta / std::sqrt(d));
+    int averageDiff = (lp == 2) ? std::floor(delta * 1.0 / std::sqrt(d)) : std::floor(delta * 1.0 / d);
 
     for (u64 i = 0; i < interSize; i++) {
         u64 idx = interIndices[i];

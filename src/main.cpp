@@ -831,22 +831,22 @@ int main(int argc, char **argv)
 
     // eq_test();
 
-    int lp = cmd.getOr("p", 0);
+    // int lp = cmd.getOr("p", 0);
 
-    if (lp != 0) {
-        if (cmd.isSet("prefix")) {
-            fuzzyPsiLpPrefix(cmd);
-        } else {
-            fuzzyPsiLp(cmd);
-        }
-    } else {
-        if (cmd.isSet("prefix")) {
-            fuzzyPsiPrefix(cmd);
-        } else {
-            fuzzyPsi(cmd);
-        }
-    }
-    return 0;
+    // if (lp != 0) {
+    //     if (cmd.isSet("prefix")) {
+    //         fuzzyPsiLpPrefix(cmd);
+    //     } else {
+    //         fuzzyPsiLp(cmd);
+    //     }
+    // } else {
+    //     if (cmd.isSet("prefix")) {
+    //         fuzzyPsiPrefix(cmd);
+    //     } else {
+    //         fuzzyPsi(cmd);
+    //     }
+    // }
+    // return 0;
 
     // SilentOtExtSender sender;
     // SilentOtExtReceiver recver;
@@ -899,10 +899,10 @@ int main(int argc, char **argv)
 
     auto sock = coproto::LocalAsyncSocket::makePair();
 
-    int n = 2;
+    int n = 1;
 
-    MuxSender sender(n, &sock[0]);
-    MuxRecver recver(n, &sock[1]);
+    B2aSender sender(n, &sock[0]);
+    B2aRecver recver(n, &sock[1]);
     std::vector<block> blk(n);
     std::vector<block> blk0(n);
     std::vector<block> blk1(n);
@@ -919,15 +919,9 @@ int main(int argc, char **argv)
     //     v0[i] = block(1, 0);
     //     v1[i] = block(0, 1);
     // }
-    blk0[0] = block(2, 2);
-    blk1[0] = block(2, 1);
-    v0[0] = 121;
-    v1[0] = 25;
+    blk0[0] = block(0, 2);
+    blk1[0] = block(0, 1);
 
-    blk0[1] = block(0, 1);
-    blk1[1] = block(0, 1);
-    v0[1] = 7;
-    v1[1] = 2;
     // std::vector<u64> val0(n);
     // std::vector<u64> val1(n);
     // BitVector val0(n);
@@ -940,9 +934,9 @@ int main(int argc, char **argv)
     osuCrypto::Timer timer;
     timer.setTimePoint("begin");
 
-    std::thread thread_sender([&] { sender.muxA(blk0, v0, val0, 2); });
+    std::thread thread_sender([&] { sender.b2a(blk0, val0); });
 
-    std::thread thread_recver([&] { recver.muxA(blk1, v1, val1, 2); });
+    std::thread thread_recver([&] { recver.b2a(blk1, val1); });
 
     thread_sender.join();
     thread_recver.join();
