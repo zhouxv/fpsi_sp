@@ -20,6 +20,8 @@
 
 using namespace secJoin;
 
+int shift = 1; // modify prefixLen by shift
+
 // to be fixed
 void LocalMapPrefix(std::vector<std::vector<u64>> &inputs, std::vector<block> &pid, std::vector<block> &listKey, std::vector<block> &listVal, int delta)
 {
@@ -27,7 +29,7 @@ void LocalMapPrefix(std::vector<std::vector<u64>> &inputs, std::vector<block> &p
 
     u64 m = inputs.size();
     u64 d = inputs[0].size();
-    int prefixLen = static_cast<int>(std::ceil(std::log2(delta * 2 + 1)));
+    int prefixLen = static_cast<int>(std::ceil(std::log2(delta * 2 + 1))) + (1 << shift);
 
     pid.resize(m);
 
@@ -94,7 +96,7 @@ void LocalMapPrefix(std::vector<std::vector<u64>> &inputs, std::vector<block> &p
             for (u64 k = 0; k < segNum; k++) {
                 u64 segStart = start + k * (2 * delta + 1);
                 u64 segEnd = std::min(end, segStart + (2 * delta));
-                auto prefixes = getIntervalPrefix(segStart, segEnd);
+                auto prefixes = getIntervalPrefix(segStart, segEnd, shift);
                 for (auto &p : prefixes) {
                     block key = block(i << 32, 0) ^ p;
                     block val = ZeroBlock;
@@ -127,7 +129,10 @@ void fuzzyPsiPrefix(const oc::CLP &cmd)
     int delta = cmd.getOr("delta", 2);
     int verbose = cmd.getOr("v", 0);
 
-    int prefixLen = static_cast<int>(std::ceil(std::log2(delta * 2 + 1)));
+    shift = cmd.getOr("s", 0);
+
+    int prefixNum = static_cast<int>(std::ceil(std::log2(delta * 2 + 1))) + (1 << shift);
+    int prefixLen = static_cast<int>(std::floor(std::log2(delta * 2 + 1))) - shift + 1;
 
     int interSize = cmd.getOr("nn", 4);
 
@@ -182,7 +187,7 @@ void fuzzyPsiPrefix(const oc::CLP &cmd)
     sendLocalMap.join();
     recvLocalMap.join();
 
-    auto preOKVS = OKVS(2 * n * d * prefixLen);
+    auto preOKVS = OKVS(2 * n * d * prefixNum);
     AltModPrf::KeyType senderKey = AltModPrf::KeyType({
         block(0, 1),
         block(0, 2),
@@ -225,7 +230,7 @@ void fuzzyPsiPrefix(const oc::CLP &cmd)
     AltModPrf::KeyType k0 = k1 ^ key;
 
     std::thread sendSoOPPRFReverse([&] {
-        SoOPPRFRecver recv(2 * n * d * prefixLen, 2 * n * d * prefixLen, 1, false, &sock[0]);
+        SoOPPRFRecver recv(2 * n * d * prefixLen, 2 * n * d * prefixNum, 1, false, &sock[0]);
 
         std::vector<block> inputs(2 * n * d * prefixLen);
         for (u64 i = 0; i < n; i++) {
@@ -266,7 +271,7 @@ void fuzzyPsiPrefix(const oc::CLP &cmd)
     });
 
     std::thread recvSoOPPRFReverse([&] {
-        SoOPPRFSender send(2 * n * d * prefixLen, 2 * n * d * prefixLen, 1, false, &sock[1]);
+        SoOPPRFSender send(2 * n * d * prefixLen, 2 * n * d * prefixNum, 1, false, &sock[1]);
 
         std::vector<block> rand_R(2 * n * d * prefixLen);
 
@@ -334,7 +339,7 @@ void fuzzyPsiPrefix(const oc::CLP &cmd)
     rand_S_j = std::vector<block>(n, ZeroBlock);
 
     std::thread sendSoOPPRF([&] {
-        SoOPPRFSender send(2 * n * d * prefixLen, 2 * n * d * prefixLen, 1, false, &sock[0]);
+        SoOPPRFSender send(2 * n * d * prefixLen, 2 * n * d * prefixNum, 1, false, &sock[0]);
 
         std::vector<block> rand_S(2 * n * d * prefixLen);
 
@@ -363,7 +368,7 @@ void fuzzyPsiPrefix(const oc::CLP &cmd)
     });
 
     std::thread recvSoOPPRF([&] {
-        SoOPPRFRecver recv(2 * n * d * prefixLen, 2 * n * d * prefixLen, 1, false, &sock[1]);
+        SoOPPRFRecver recv(2 * n * d * prefixLen, 2 * n * d * prefixNum, 1, false, &sock[1]);
 
         std::vector<block> inputs(2 * n * d * prefixLen);
         for (u64 i = 0; i < n; i++) {
@@ -469,7 +474,7 @@ void fuzzyPsiPrefix(const oc::CLP &cmd)
             }
         }
 
-        SoOPPRFRecver recv(n * d * prefixLen, n * d * prefixLen, 1, false, &sock[0]);
+        SoOPPRFRecver recv(n * d * prefixLen, n * d * prefixNum, 1, false, &sock[0]);
 
         std::vector<block> rand_S(n * d * prefixLen);
 
@@ -505,7 +510,7 @@ void fuzzyPsiPrefix(const oc::CLP &cmd)
 
         for (int i = 0; i < n; i++) {
             for (int j = 0; j < d; j++) {
-                auto prefixes = getIntervalPrefix(recvSet[i][j] - delta, recvSet[i][j] + delta);
+                auto prefixes = getIntervalPrefix(recvSet[i][j] - delta, recvSet[i][j] + delta, shift);
                 for (auto &p : prefixes) {
                     block key = block(high(ID_R[i]) << 8, 0) ^ block(j << 4, 0) ^ p;
                     block val = ZeroBlock;
@@ -515,12 +520,12 @@ void fuzzyPsiPrefix(const oc::CLP &cmd)
             }
         }
 
-        while (filterKey.size() < n * d * prefixLen) {
+        while (filterKey.size() < n * d * prefixNum) {
             filterKey.push_back(prng.get<block>());
             filterVal.push_back(prng.get<block>());
         }
 
-        SoOPPRFSender send(n * d * prefixLen, n * d * prefixLen, 1, false, &sock[1]);
+        SoOPPRFSender send(n * d * prefixLen, n * d * prefixNum, 1, false, &sock[1]);
 
         std::vector<block> rand_R(n * d * prefixLen);
 
@@ -655,11 +660,16 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
     int verbose = cmd.getOr("v", 0);
 
     u64 delta_p = std::pow(delta, lp);
-    int prefixLen = static_cast<int>(std::ceil(std::log2(delta * 2 + 1)));
+
+    shift = cmd.getOr("s", 0);
+
+    int prefixNum = static_cast<int>(std::ceil(std::log2(delta * 2 + 1))) + (1 << shift);
+    int prefixLen = static_cast<int>(std::floor(std::log2(delta * 2 + 1))) - shift + 1;
 
     int prefixLenIfmat = static_cast<int>(std::ceil(std::log2(delta_p * 2 + 1)));
 
-    int prefixLenUpDown = 2 * static_cast<int>(std::ceil(std::log2(delta + 1)));
+    int prefixNumUpDown = 2 * (static_cast<int>(std::ceil(std::log2(delta + 1))) + (1 << shift));
+    int prefixLenUpDown = 2 * (static_cast<int>(std::floor(std::log2(delta + 1))) - shift + 1);
 
     int interSize = cmd.getOr("nn", 4);
 
@@ -716,7 +726,7 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
     sendLocalMap.join();
     recvLocalMap.join();
 
-    auto preOKVS = OKVS(2 * n * d * prefixLen);
+    auto preOKVS = OKVS(2 * n * d * prefixNum);
     AltModPrf::KeyType senderKey = AltModPrf::KeyType({
         block(0, 1),
         block(0, 2),
@@ -759,7 +769,7 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
     AltModPrf::KeyType k0 = k1 ^ key;
 
     std::thread sendSoOPPRFReverse([&] {
-        SoOPPRFRecver recv(2 * n * d * prefixLen, 2 * n * d * prefixLen, 1, false, &sock[0]);
+        SoOPPRFRecver recv(2 * n * d * prefixLen, 2 * n * d * prefixNum, 1, false, &sock[0]);
 
         std::vector<block> inputs(2 * n * d * prefixLen);
         for (u64 i = 0; i < n; i++) {
@@ -800,7 +810,7 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
     });
 
     std::thread recvSoOPPRFReverse([&] {
-        SoOPPRFSender send(2 * n * d * prefixLen, 2 * n * d * prefixLen, 1, false, &sock[1]);
+        SoOPPRFSender send(2 * n * d * prefixLen, 2 * n * d * prefixNum, 1, false, &sock[1]);
 
         std::vector<block> rand_R(2 * n * d * prefixLen);
 
@@ -868,7 +878,7 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
     rand_S_j = std::vector<block>(n, ZeroBlock);
 
     std::thread sendSoOPPRF([&] {
-        SoOPPRFSender send(2 * n * d * prefixLen, 2 * n * d * prefixLen, 1, false, &sock[0]);
+        SoOPPRFSender send(2 * n * d * prefixLen, 2 * n * d * prefixNum, 1, false, &sock[0]);
 
         std::vector<block> rand_S(2 * n * d * prefixLen);
 
@@ -897,7 +907,7 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
     });
 
     std::thread recvSoOPPRF([&] {
-        SoOPPRFRecver recv(2 * n * d * prefixLen, 2 * n * d * prefixLen, 1, false, &sock[1]);
+        SoOPPRFRecver recv(2 * n * d * prefixLen, 2 * n * d * prefixNum, 1, false, &sock[1]);
 
         std::vector<block> inputs(2 * n * d * prefixLen);
         for (u64 i = 0; i < n; i++) {
@@ -1000,6 +1010,7 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
 
     int OkvsBatch = lp / 2 + 1;
     int halfprefixLen = prefixLenUpDown / 2;
+    int halfprefixNum = prefixNumUpDown / 2;
 
     std::thread sendFilter([&] {
         std::vector<block> inputs(n * d * halfprefixLen * 2 * OkvsBatch);
@@ -1018,7 +1029,7 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
             }
         }
 
-        SoOPPRFRecver recv(OkvsBatch * n * d * 2 * halfprefixLen, OkvsBatch * n * d * 2 * halfprefixLen, 1, false, &sock[0]);
+        SoOPPRFRecver recv(OkvsBatch * n * d * 2 * halfprefixLen, OkvsBatch * n * d * 2 * halfprefixNum, 1, false, &sock[0]);
 
         std::vector<block> rand_S(OkvsBatch * n * d * 2 * halfprefixLen);
 
@@ -1150,8 +1161,8 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
 
         for (int i = 0; i < n; i++) {
             for (int j = 0; j < d; j++) {
-                auto prefixes0 = getIntervalPrefix(recvSet[i][j] - delta, recvSet[i][j] - 1);
-                auto prefixes1 = getIntervalPrefix(recvSet[i][j], recvSet[i][j] + delta);
+                auto prefixes0 = getIntervalPrefix(recvSet[i][j] - delta, recvSet[i][j] - 1, shift);
+                auto prefixes1 = getIntervalPrefix(recvSet[i][j], recvSet[i][j] + delta, shift);
                 for (auto &p : prefixes0) {
                     auto upbound = upBound(p);
                     for (int batch = 0; batch < OkvsBatch; batch++) {
@@ -1183,20 +1194,20 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
             }
         }
 
-        if (filterKey.size() > n * d * prefixLenUpDown * OkvsBatch) {
+        if (filterKey.size() > n * d * prefixNumUpDown * OkvsBatch) {
             throw std::runtime_error("filterKey size wrong");
         }
 
-        while (filterKey.size() < n * d * prefixLenUpDown * OkvsBatch) {
+        while (filterKey.size() < n * d * prefixNumUpDown * OkvsBatch) {
             filterKey.push_back(prng.get<block>());
             filterVal.push_back(prng.get<block>());
         }
 
-        if (filterVal.size() != n * d * prefixLenUpDown * OkvsBatch) {
+        if (filterVal.size() != n * d * prefixNumUpDown * OkvsBatch) {
             throw std::runtime_error("filterVal size wrong");
         }
 
-        SoOPPRFSender send(n * d * prefixLenUpDown * OkvsBatch, n * d * prefixLenUpDown * OkvsBatch, 1, false, &sock[1]);
+        SoOPPRFSender send(n * d * prefixLenUpDown * OkvsBatch, n * d * prefixNumUpDown * OkvsBatch, 1, false, &sock[1]);
 
         std::vector<block> rand_R(n * d * prefixLenUpDown * OkvsBatch);
 

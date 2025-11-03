@@ -28,7 +28,7 @@ inline u64 high(oc::block &blk)
 }
 
 // Decompose the interval [start, end] using an improved method in appendix
-inline std::vector<block> getIntervalPrefix(u64 start, u64 end)
+inline std::vector<block> getIntervalPrefix(u64 start, u64 end, int shift = 0)
 {
     if (start > end) {
         throw std::runtime_error("decompose improve: end should >= start");
@@ -65,17 +65,37 @@ inline std::vector<block> getIntervalPrefix(u64 start, u64 end)
     u64 right_pos = aligned_start;    // move right
     u64 left_pos = aligned_start - 1; // move left
 
+    std::vector<block> temp_results;
+
     // traverse from high bit to low bit
     for (u64 i = bit_width; i >= 1; i--) {
         if (right_bits[i - 1]) {
             // if right_len's i-th bit is 1
-            results.push_back(block(i - 1, right_pos >> (i - 1)));
+            if (i - 1 > (bit_width - 1 - shift)) {
+                temp_results.push_back(block(i - 1, right_pos >> (i - 1)));
+            } else {
+                results.push_back(block(i - 1, right_pos >> (i - 1)));
+            }
             right_pos += (1 << (i - 1));
         }
         if (left_bits[i - 1]) {
             // if left_len's i-th bit is 1
-            results.push_back(block(i - 1, left_pos >> (i - 1)));
+            if (i - 1 > (bit_width - 1 - shift)) {
+                temp_results.push_back(block(i - 1, left_pos >> (i - 1)));
+            } else {
+                results.push_back(block(i - 1, left_pos >> (i - 1)));
+            }
             left_pos -= (1 << (i - 1));
+        }
+    }
+
+    if (shift != 0) {
+        for (int i = 0; i < temp_results.size(); i++) {
+            int len = high(temp_results[i]);
+            u64 base = low(temp_results[i]);
+            for (int j = 0; j < (1 << (len - (bit_width - 1 - shift))); j++) {
+                results.push_back(block(bit_width - 1 - shift, (base << (len - (bit_width - 1 - shift))) + j));
+            }
         }
     }
 

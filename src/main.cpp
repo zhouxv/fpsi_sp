@@ -849,6 +849,13 @@ int main(int argc, char **argv)
     }
     return 0;
 
+    // auto prefixes = getIntervalPrefix(13, 13 + 64);
+    // for (auto &p : prefixes) {
+    //     std::cout << p << std::endl;
+    // }
+
+    // auto t = getPrefix(27, 6);
+
     // SilentOtExtSender sender;
     // SilentOtExtReceiver recver;
 
