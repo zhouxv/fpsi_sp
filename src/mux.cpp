@@ -106,7 +106,7 @@ BitVector MuxSender::mux(std::vector<block> &u0, std::vector<block> &v0, std::ve
     }
 
     auto end_comm = socket->bytesReceived() + socket->bytesSent();
-    std::cout << "mux comm: " << (end_comm - curr_comm) / 1024.0 / 1024.0 << " MB " << std::endl;
+    // std::cout << "mux comm: " << (end_comm - curr_comm) / 1024.0 / 1024.0 << " MB " << std::endl;
 
     return b0;
 }
@@ -175,7 +175,7 @@ BitVector MuxSender::muxA(std::vector<block> &u0, std::vector<u64> &v0, std::vec
     }
 
     auto end_comm = socket->bytesReceived() + socket->bytesSent();
-    std::cout << "mux comm: " << (end_comm - curr_comm) / 1024.0 / 1024.0 << " MB " << std::endl;
+    // std::cout << "mux comm: " << (end_comm - curr_comm) / 1024.0 / 1024.0 << " MB " << std::endl;
 
     return b0;
 }

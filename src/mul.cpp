@@ -1,4 +1,5 @@
 #include "mul.h"
+#include <vector>
 #include "utils.h"
 
 using namespace osuCrypto;
@@ -29,19 +30,27 @@ void MulSender::mul(std::vector<uint64_t> &inputs, std::vector<uint64_t> &val)
 
     std::vector<u64> correctMessages(numOts);
 
+    std::vector<u8> compressedBits;
+
     for (int i = 0; i < numOts; i++) {
+        int shift = i % 64;
+
         u64 mask = low(messages[i][0]) + inputs[i / 64];
-        correctMessages[i] = low(messages[i][1]) ^ mask;
+        correctMessages[i] = (low(messages[i][1]) ^ mask) << shift >> shift;
+        for (int j = 0; j < 8 - shift / 8; j++) {
+            compressedBits.push_back(static_cast<uint8_t>(correctMessages[i] >> (8 * j)) & 0xFF);
+        }
     }
 
     for (int i = 0; i < numOts; i++) {
-        val[i / 64] += 0 - (low(messages[i][0]) << (i % 64));
+        int shift = i % 64;
+        val[i / 64] += 0 - ((low(messages[i][0]) << shift >> shift) << shift);
     }
 
-    coproto::sync_wait(socket->send(correctMessages));
+    coproto::sync_wait(socket->send(compressedBits));
 
     auto end_comm = socket->bytesReceived() + socket->bytesSent();
-    std::cout << "mul comm: " << (end_comm - curr_comm) / 1024.0 / 1024.0 << " MB " << std::endl;
+    // std::cout << "mul comm: " << (end_comm - curr_comm) / 1024.0 / 1024.0 << " MB " << std::endl;
 }
 
 MulRecver::MulRecver(uint64_t num_, coproto::Socket *socket_) : num(num_), socket(socket_)
@@ -80,13 +89,21 @@ void MulRecver::mul(std::vector<uint64_t> &inputs, std::vector<uint64_t> &val)
 
     std::vector<u64> correctMessages(numOts);
 
-    coproto::sync_wait(socket->recv(correctMessages));
+    std::vector<u8> compressedBits;
 
+    coproto::sync_wait(socket->recvResize(compressedBits));
+
+    u64 offset = 0;
     for (int i = 0; i < numOts; i++) {
+        u64 msg = 0;
+        int shift = i % 64;
+        for (int j = 0; j < 8 - shift / 8; j++) {
+            msg |= u64(compressedBits[offset++]) << (8 * j);
+        }
         if (choiceBit[i] & 1) {
-            val[i / 64] += (low(messages[i]) ^ correctMessages[i]) << (i % 64);
+            val[i / 64] += ((low(messages[i]) ^ msg) << shift >> shift) << (i % 64);
         } else {
-            val[i / 64] += low(messages[i]) << (i % 64);
+            val[i / 64] += (low(messages[i]) << shift >> shift) << (i % 64);
         }
     }
 }

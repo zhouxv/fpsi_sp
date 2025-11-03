@@ -4,6 +4,7 @@
 #include <cryptoTools/Common/Defines.h>
 #include <cryptoTools/Common/block.h>
 #include <cstdlib>
+#include <format>
 #include <iostream>
 #include <vector>
 #include "Defines.h"
@@ -57,7 +58,7 @@ void LocalMap(std::vector<std::vector<u64>> &inputs, std::vector<block> &pid, st
             }
             maxInter = max(intervals[i].back().second - intervals[i].back().first, maxInter);
         }
-        std::cout << "Dimension " << i << " : total intervals = " << intervals[i].size() << std::endl;
+        // std::cout << "Dimension " << i << " : total intervals = " << intervals[i].size() << std::endl;
     }
 
     // gen Local ID
@@ -109,6 +110,7 @@ void fuzzyPsi(const oc::CLP &cmd)
     u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 10));
     size_t d = cmd.getOr("d", 2);
     int delta = cmd.getOr("delta", 2);
+    int verbose = cmd.getOr("v", 0);
 
     int interSize = cmd.getOr("nn", 4);
 
@@ -364,7 +366,7 @@ void fuzzyPsi(const oc::CLP &cmd)
 
     // fmap finish
     time.setTimePoint("fmap done");
-    std::cout << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB " << std::endl;
+    // std::cout << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB " << std::endl;
 
     std::vector<u8> choiceBit(n, 0);
 
@@ -373,7 +375,7 @@ void fuzzyPsi(const oc::CLP &cmd)
 
         for (int i = 0; i < n; i++) {
             for (int j = 0; j < d; j++) {
-                inputs[i * d + j] = (ID_S[i] << 8) ^ block(j, sendSet[i][j]); // 8 bits for dimension
+                inputs[i * d + j] = block(high(ID_S[i]) << 8, 0) ^ block(j, sendSet[i][j]); // 8 bits for dimension
             }
         }
 
@@ -402,7 +404,7 @@ void fuzzyPsi(const oc::CLP &cmd)
         for (int i = 0; i < n; i++) {
             for (int j = 0; j < d; j++) {
                 for (int t = -delta; t <= delta; t++) {
-                    block key = (ID_R[i] << 8) ^ block(j, recvSet[i][j] + t);
+                    block key = block(high(ID_R[i]) << 8, 0) ^ block(j, recvSet[i][j] + t);
                     block val = ZeroBlock;
                     filterKey[idx] = key;
                     filterVal[idx] = val;
@@ -438,7 +440,7 @@ void fuzzyPsi(const oc::CLP &cmd)
     recvFilter.join();
 
     time.setTimePoint("filter done");
-    std::cout << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB " << std::endl;
+    // std::cout << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB " << std::endl;
 
     std::thread sendOT([&] {
         SilentOtExtSender send;
@@ -498,21 +500,31 @@ void fuzzyPsi(const oc::CLP &cmd)
 
     auto e = time.setTimePoint("OT done");
 
-    for (int i = 0; i < choiceBit.size(); i++) {
-        if (choiceBit[i]) {
-            std::cout << "intersection at index " << i << std::endl;
+    if (verbose) {
+        for (int i = 0; i < choiceBit.size(); i++) {
+            if (choiceBit[i]) {
+                std::cout << "intersection at index " << i << std::endl;
+            }
+            if (choiceBit[i] && std::find(interIndices.begin(), interIndices.end(), i) == interIndices.end()) {
+                throw runtime_error("false positive in fuzzyPsi");
+            }
         }
-        if (choiceBit[i] && std::find(interIndices.begin(), interIndices.end(), i) == interIndices.end()) {
-            throw runtime_error("false positive in fuzzyPsi");
-        }
+        std::cout << "All matches found!" << std::endl;
+
+        std::cout << time << std::endl;
     }
 
-    std::cout << "All matches found!" << std::endl;
-
-    std::cout << time << std::endl;
-
-    std::cout << "comm: " << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB, "
-              << " time: " << std::chrono::duration_cast<std::chrono::microseconds>(e - s).count() / double(1000 * 1000) << " s" << std::endl;
+    std::cout << std::format(
+                     "[ours]    L0    {:^5}  {:^5}  {:^5}  {:^10.3f} "
+                     "{:^10.3f}",
+                     d,
+                     delta,
+                     n,
+                     (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0,
+                     std::chrono::duration_cast<std::chrono::microseconds>(e - s).count() / double(1000 * 1000))
+              << std::endl;
+    // std::cout << "comm: " << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB, "
+    //   << " time: " << std::chrono::duration_cast<std::chrono::microseconds>(e - s).count() / double(1000 * 1000) << " s" << std::endl;
 }
 
 void fuzzyPsiLp(const oc::CLP &cmd)
@@ -522,6 +534,7 @@ void fuzzyPsiLp(const oc::CLP &cmd)
     int delta = cmd.getOr("delta", 2);
     int lp = cmd.getOr("p", 2);
     int interSize = cmd.getOr("nn", 4);
+    int verbose = cmd.getOr("v", 0);
 
     u64 delta_p = std::pow(delta, lp);
     int prefixLen = static_cast<int>(std::ceil(std::log2(delta_p + 1)));
@@ -776,7 +789,7 @@ void fuzzyPsiLp(const oc::CLP &cmd)
 
     // fmap finish
     time.setTimePoint("fmap done");
-    std::cout << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB " << std::endl;
+    // std::cout << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB " << std::endl;
 
     std::vector<u8> choiceBit(n, 0);
 
@@ -791,7 +804,7 @@ void fuzzyPsiLp(const oc::CLP &cmd)
 
         for (int i = 0; i < n; i++) {
             for (int j = 0; j < d; j++) {
-                inputs[i * d + j] = (ID_S[i] << 8) ^ block(j, sendSet[i][j]); // 8 bits for dimension
+                inputs[i * d + j] = block(high(ID_S[i]) << 8, 0) ^ block(j, sendSet[i][j]); // 8 bits for dimension
             }
         }
 
@@ -814,7 +827,7 @@ void fuzzyPsiLp(const oc::CLP &cmd)
 
         auto dt = std::chrono::duration_cast<std::chrono::microseconds>(e - s).count() / double(1000);
 
-        std::cout << "b2a time: " << dt << " ms" << std::endl;
+        // std::cout << "b2a time: " << dt << " ms" << std::endl;
 
         for (u64 i = 0; i < n; i++) {
             for (u64 j = 0; j < d; j++) {
@@ -846,7 +859,7 @@ void fuzzyPsiLp(const oc::CLP &cmd)
         for (int i = 0; i < n; i++) {
             for (int j = 0; j < d; j++) {
                 for (int t = -delta; t <= delta; t++) {
-                    block key = (ID_R[i] << 8) ^ block(j, recvSet[i][j] + t);
+                    block key = block(high(ID_R[i]) << 8, 0) ^ block(j, recvSet[i][j] + t);
                     block val = block(0, std::pow(std::abs(t), lp));
                     filterKey[idx] = key;
                     filterVal[idx] = val;
@@ -895,7 +908,7 @@ void fuzzyPsiLp(const oc::CLP &cmd)
     recvFilter.join();
 
     time.setTimePoint("filter done");
-    std::cout << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB " << std::endl;
+    // std::cout << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB " << std::endl;
 
     std::thread sendOT([&] {
         SilentOtExtSender send;
@@ -955,19 +968,42 @@ void fuzzyPsiLp(const oc::CLP &cmd)
 
     auto e = time.setTimePoint("OT done");
 
-    for (int i = 0; i < choiceBit.size(); i++) {
-        if (choiceBit[i]) {
-            std::cout << "intersection at index " << i << std::endl;
+    if (verbose) {
+        for (int i = 0; i < choiceBit.size(); i++) {
+            if (choiceBit[i]) {
+                std::cout << "intersection at index " << i << std::endl;
+            }
+            if (choiceBit[i] && std::find(interIndices.begin(), interIndices.end(), i) == interIndices.end()) {
+                throw runtime_error("false positive in fuzzyPsi");
+            }
         }
-        if (choiceBit[i] && std::find(interIndices.begin(), interIndices.end(), i) == interIndices.end()) {
-            throw runtime_error("false positive in fuzzyPsi");
-        }
+        std::cout << "All matches found!" << std::endl;
+
+        std::cout << time << std::endl;
     }
 
-    std::cout << "All matches found!" << std::endl;
+    if (lp == 1) {
+        std::cout << std::format(
+                         "[ours]    L1    {:^5}  {:^5}  {:^5}  {:^10.3f} "
+                         "{:^10.3f}",
+                         d,
+                         delta,
+                         n,
+                         (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0,
+                         std::chrono::duration_cast<std::chrono::microseconds>(e - s).count() / double(1000 * 1000))
+                  << std::endl;
+    } else {
+        std::cout << std::format(
+                         "[ours]    L2    {:^5}  {:^5}  {:^5}  {:^10.3f} "
+                         "{:^10.3f}",
+                         d,
+                         delta,
+                         n,
+                         (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0,
+                         std::chrono::duration_cast<std::chrono::microseconds>(e - s).count() / double(1000 * 1000))
+                  << std::endl;
+    }
 
-    std::cout << time << std::endl;
-
-    std::cout << "comm: " << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB, "
-              << " time: " << std::chrono::duration_cast<std::chrono::microseconds>(e - s).count() / double(1000 * 1000) << " s" << std::endl;
+    // std::cout << "comm: " << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB, "
+    //   << " time: " << std::chrono::duration_cast<std::chrono::microseconds>(e - s).count() / double(1000 * 1000) << " s" << std::endl;
 }

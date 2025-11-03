@@ -22,15 +22,16 @@ target_include_directories(fpsi PRIVATE
 find_package(cryptoTools REQUIRED)
 find_package(libOTe REQUIRED)
 find_package(volePSI REQUIRED)
-find_package(Kuku 2.1 QUIET REQUIRED)
+find_package(fmt REQUIRED)
+# find_package(Kuku 2.1 QUIET REQUIRED)
 
-target_link_libraries(fpsi PRIVATE secureJoin oc::cryptoTools libOTe visa::volePSI)
+target_link_libraries(fpsi PRIVATE secureJoin oc::cryptoTools libOTe visa::volePSI fmt::fmt)
 
 # PIRANA
 
-add_subdirectory(thirdparty/PIRANA)
-target_include_directories(fpsi PRIVATE thirdparty/PIRANA/src)
-target_link_libraries(fpsi PRIVATE pirana)
+# add_subdirectory(thirdparty/PIRANA)
+# target_include_directories(fpsi PRIVATE thirdparty/PIRANA/src)
+# target_link_libraries(fpsi PRIVATE pirana)
 
 # OKVS
 add_subdirectory(thirdparty/OKVS)

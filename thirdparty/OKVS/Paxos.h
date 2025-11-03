@@ -126,8 +126,8 @@ namespace Okvs {
         // encode can be called more than once.
         void setInput(span<const block> inputs);
 
-        // encode the given inputs,value pair based on the already set input. The paxos data
-        // structure is written to output. input,value should be numItems
+        // encode the given inputs,value pair based on the already set input. The
+        // paxos data structure is written to output. input,value should be numItems
         // in size, output should be Paxos::size() in size. If the paxos
         // should be randomized, then provide a PRNG.
         template <typename ValueType>
@@ -139,8 +139,8 @@ namespace Okvs {
             encode(V, P, h, prng);
         }
 
-        // encode the given inputs,value pair based on the already set input. The paxos data
-        // structure is written to output. input,value should have numItems
+        // encode the given inputs,value pair based on the already set input. The
+        // paxos data structure is written to output. input,value should have numItems
         // rows, output should have Paxos::size() rows. All should have the
         // same number of columns. If the paxos should be randomized, then
         // provide a PRNG.
@@ -214,17 +214,20 @@ namespace Okvs {
         void allocate();
 
         // decodes 32 instances. rows should contain the row indicies, dense the dense
-        // part. values is where the values are written to. p is the Paxos, h is the value op. helper.
+        // part. values is where the values are written to. p is the Paxos, h is the
+        // value op. helper.
         template <typename ValueType, typename Helper, typename Vec>
         void decode32(const IdxType *rows, const block *dense, ValueType *values, Vec &p, Helper &h);
 
         // decodes 8 instances. rows should contain the row indicies, dense the dense
-        // part. values is where the values are written to. p is the Paxos, h is the value op. helper.
+        // part. values is where the values are written to. p is the Paxos, h is the
+        // value op. helper.
         template <typename ValueType, typename Helper, typename Vec>
         void decode8(const IdxType *rows, const block *dense, ValueType *values, Vec &p, Helper &h);
 
-        // decodes one instances. rows should contain the row indicies, dense the dense
-        // part. values is where the values are written to. p is the Paxos, h is the value op. helper.
+        // decodes one instances. rows should contain the row indicies, dense the
+        // dense part. values is where the values are written to. p is the Paxos, h is
+        // the value op. helper.
         template <typename ValueType, typename Helper, typename Vec>
         void decode1(const IdxType *rows, const block *dense, ValueType *values, Vec &p, Helper &h);
 
@@ -320,7 +323,7 @@ namespace Okvs {
             mSeed = seed;
             mPaxosParam.init(mItemsPerBin, weight, ssp, dt);
 
-            std::cout << "Num of Bins: " << mNumBins << std::endl;
+            // std::cout << "Num of Bins: " << mNumBins << std::endl;
         }
 
         // solve the system for the given input vectors.
@@ -359,10 +362,9 @@ namespace Okvs {
         template <typename ValueType>
         void decode(span<const block> input, span<ValueType> values, span<const ValueType> p, u64 numThreads = 0);
 
-        // compute the retrieval index for the given input vector and write the result to values.
-        // inputs are the keys.
-        // values are the output.
-        // p is the paxos vector.
+        // compute the retrieval index for the given input vector and write the result
+        // to values. inputs are the keys. values are the output. p is the paxos
+        // vector.
         template <typename ValueType>
         void computeRetrievalIdx(span<const block> inputs, std::vector<ValueType> &values, std::vector<std::vector<u64>> &idx, u64 numThreads);
 
@@ -417,7 +419,8 @@ namespace Okvs {
         template <typename IdxType, typename Helper>
         void implParComputeIdx(span<const block> inputs, std::vector<block> &values, std::vector<std::vector<u64>> &pp, Helper &h, u64 numThreads);
 
-        // decode the given inputs based on the paxos p. The output is written to values.
+        // decode the given inputs based on the paxos p. The output is written to
+        // values.
         template <typename IdxType, typename Vec, typename ConstVec, typename Helper>
         void implDecodeBatch(span<const block> inputs, Vec &values, ConstVec &p, Helper &h);
 
@@ -428,8 +431,9 @@ namespace Okvs {
         void implDecodeIdxBatch(
             std::vector<block> &hashs, std::vector<std::vector<u64>> &rows, std::vector<block> &values, std::vector<std::map<u64, block>> &pp, Helper &h);
 
-        // decode the given inputs based on the paxos p. The output is written to values.
-        // this differs from implDecode in that all inputs must be for the same paxos bin.
+        // decode the given inputs based on the paxos p. The output is written to
+        // values. this differs from implDecode in that all inputs must be for the
+        // same paxos bin.
         template <typename IdxType, typename Vec, typename ConstVec, typename Helper>
         void implDecodeBin(u64 binIdx, span<block> hashes, Vec &values, Vec &valuesBuff, span<u64> inIdxs, ConstVec &p, Helper &h, Paxos<IdxType> &paxos);
 

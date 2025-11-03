@@ -520,77 +520,77 @@ void simulation_2pc()
     }
 }
 
-void sim_okvr()
-{
-    u64 n = 1 << 11;
-    std::vector<block> key(n), val(n);
+// void sim_okvr()
+// {
+//     u64 n = 1 << 11;
+//     std::vector<block> key(n), val(n);
 
-    auto decode_size = 10;
-    auto numQuery = 3 * decode_size;
+//     auto decode_size = 10;
+//     auto numQuery = 3 * decode_size;
 
-    std::vector<block> decode_val(decode_size);
-    std::vector<block> decode_key(decode_size);
+//     std::vector<block> decode_val(decode_size);
+//     std::vector<block> decode_key(decode_size);
 
-    PRNG prng(ZeroBlock);
-    prng.get<block>(key);
-    prng.get<block>(val);
+//     PRNG prng(ZeroBlock);
+//     prng.get<block>(key);
+//     prng.get<block>(val);
 
-    memcpy(decode_key.data(), key.data(), decode_size * sizeof(block));
+//     memcpy(decode_key.data(), key.data(), decode_size * sizeof(block));
 
-    // offline phase
+//     // offline phase
 
-    OkvrSender sender(key, val, n, numQuery);
-    OkvrReceiver receiver(decode_key, n, numQuery);
+//     OkvrSender sender(key, val, n, numQuery);
+//     OkvrReceiver receiver(decode_key, n, numQuery);
 
-    auto seal_key = receiver.save_keys();
+//     auto seal_key = receiver.save_keys();
 
-    sender.set_keys(seal_key);
+//     sender.set_keys(seal_key);
 
-    // online phase
+//     // online phase
 
-    start_timer("online");
+//     start_timer("online");
 
-    auto [hashs, idxs] = receiver.genIndex(decode_key);
+//     auto [hashs, idxs] = receiver.genIndex(decode_key);
 
-    auto [query, batch_query_index] = receiver.genQuery(idxs);
+//     auto [query, batch_query_index] = receiver.genQuery(idxs);
 
-    auto response = sender.genResponse(query);
+//     auto response = sender.genResponse(query);
 
-    auto densePart = sender.getDensePart();
-    auto sparsePart = sender.getSparsePart();
+//     auto densePart = sender.getDensePart();
+//     auto sparsePart = sender.getSparsePart();
 
-    auto okvs = receiver.okvs;
+//     auto okvs = receiver.okvs;
 
-    std::vector<block> values(hashs.size());
+//     std::vector<block> values(hashs.size());
 
-    vector<std::map<u64, block>> pp(okvs->binNum, std::map<u64, block>());
+//     vector<std::map<u64, block>> pp(okvs->binNum, std::map<u64, block>());
 
-    for (u64 i = 0; i < okvs->binNum; i++) {
-        for (u64 j = 0; j < okvs->denseSize; j++) {
-            pp[i][okvs->sparseSize + j] = densePart[i * okvs->denseSize + j];
-        }
-    }
-    for (u64 i = 0; i < idxs.size(); i++) {
-        for (u64 j = 0; j < 3; j++) {
-            pp[idxs[i][3]][idxs[i][j]] = sparsePart[idxs[i][3] * okvs->sparseSize + idxs[i][j]];
-            std::cout << sparsePart[idxs[i][3] * okvs->sparseSize + idxs[i][j]] << std::endl;
-        }
-    }
-    std::cout << "---------------------------------" << std::endl;
-    okvs->decode(hashs, idxs, values, pp, 0);
+//     for (u64 i = 0; i < okvs->binNum; i++) {
+//         for (u64 j = 0; j < okvs->denseSize; j++) {
+//             pp[i][okvs->sparseSize + j] = densePart[i * okvs->denseSize + j];
+//         }
+//     }
+//     for (u64 i = 0; i < idxs.size(); i++) {
+//         for (u64 j = 0; j < 3; j++) {
+//             pp[idxs[i][3]][idxs[i][j]] = sparsePart[idxs[i][3] * okvs->sparseSize + idxs[i][j]];
+//             std::cout << sparsePart[idxs[i][3] * okvs->sparseSize + idxs[i][j]] << std::endl;
+//         }
+//     }
+//     std::cout << "---------------------------------" << std::endl;
+//     okvs->decode(hashs, idxs, values, pp, 0);
 
-    // auto as = receiver.client->extract_batch_answer(response);
+//     // auto as = receiver.client->extract_batch_answer(response);
 
-    // test_batch_pir_correctness(*sender.server, as, batch_query_index, *receiver.pir_parms);
+//     // test_batch_pir_correctness(*sender.server, as, batch_query_index, *receiver.pir_parms);
 
-    receiver.decode(response, batch_query_index, hashs, idxs, densePart);
+//     receiver.decode(response, batch_query_index, hashs, idxs, densePart);
 
-    stop_timer("online");
+//     stop_timer("online");
 
-    print_all_timers("");
+//     print_all_timers("");
 
-    memcmp(values.data(), val.data(), decode_size * sizeof(block)) == 0 ? std::cout << "ok\n" : std::cout << "error\n";
-}
+//     memcmp(values.data(), val.data(), decode_size * sizeof(block)) == 0 ? std::cout << "ok\n" : std::cout << "error\n";
+// }
 
 void SoOPRF_test()
 {

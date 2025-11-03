@@ -3,6 +3,7 @@
 #include <cryptoTools/Common/Defines.h>
 #include <cryptoTools/Common/block.h>
 #include <cryptoTools/Crypto/PRNG.h>
+#include <format>
 #include <iostream>
 #include <thread>
 #include <vector>
@@ -60,7 +61,7 @@ void LocalMapPrefix(std::vector<std::vector<u64>> &inputs, std::vector<block> &p
             }
             maxInter = max(intervals[i].back().second - intervals[i].back().first, maxInter);
         }
-        std::cout << "Dimension " << i << " : total intervals = " << intervals[i].size() << std::endl;
+        // std::cout << "Dimension " << i << " : total intervals = " << intervals[i].size() << std::endl;
     }
 
     // gen Local ID
@@ -124,6 +125,7 @@ void fuzzyPsiPrefix(const oc::CLP &cmd)
     u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 10));
     size_t d = cmd.getOr("d", 2);
     int delta = cmd.getOr("delta", 2);
+    int verbose = cmd.getOr("v", 0);
 
     int prefixLen = static_cast<int>(std::ceil(std::log2(delta * 2 + 1)));
 
@@ -451,7 +453,7 @@ void fuzzyPsiPrefix(const oc::CLP &cmd)
 
     // fmap finish
     time.setTimePoint("fmap-prefix done");
-    std::cout << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB " << std::endl;
+    // std::cout << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB " << std::endl;
 
     std::vector<u8> choiceBit(n, 0);
 
@@ -558,7 +560,7 @@ void fuzzyPsiPrefix(const oc::CLP &cmd)
     recvFilter.join();
 
     time.setTimePoint("filter done");
-    std::cout << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB " << std::endl;
+    // std::cout << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB " << std::endl;
 
     std::thread sendOT([&] {
         SilentOtExtSender send;
@@ -618,19 +620,30 @@ void fuzzyPsiPrefix(const oc::CLP &cmd)
 
     auto e = time.setTimePoint("OT done");
 
-    for (int i = 0; i < choiceBit.size(); i++) {
-        if (choiceBit[i]) {
-            std::cout << "intersection at index " << i << std::endl;
+    if (verbose) {
+        for (int i = 0; i < choiceBit.size(); i++) {
+            if (choiceBit[i]) {
+                std::cout << "intersection at index " << i << std::endl;
+            }
+            if (choiceBit[i] && std::find(interIndices.begin(), interIndices.end(), i) == interIndices.end()) {
+                throw runtime_error("false positive in fuzzyPsi");
+            }
         }
-        if (choiceBit[i] && std::find(interIndices.begin(), interIndices.end(), i) == interIndices.end()) {
-            throw runtime_error("false positive in fuzzyPsi");
-        }
+        std::cout << time << std::endl;
     }
 
-    std::cout << time << std::endl;
+    std::cout << std::format(
+                     "[ours-prefix]    L0    {:^5}  {:^5}  {:^5}  {:^10.3f} "
+                     "{:^10.3f}",
+                     d,
+                     delta,
+                     n,
+                     (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0,
+                     std::chrono::duration_cast<std::chrono::microseconds>(e - s).count() / double(1000 * 1000))
+              << std::endl;
 
-    std::cout << "comm: " << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB, "
-              << " time: " << std::chrono::duration_cast<std::chrono::microseconds>(e - s).count() / double(1000 * 1000) << " s" << std::endl;
+    // std::cout << "comm: " << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB, "
+    //   << " time: " << std::chrono::duration_cast<std::chrono::microseconds>(e - s).count() / double(1000 * 1000) << " s" << std::endl;
 }
 
 void fuzzyPsiLpPrefix(const oc::CLP &cmd)
@@ -639,6 +652,7 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
     size_t d = cmd.getOr("d", 2);
     int delta = cmd.getOr("delta", 2);
     int lp = cmd.getOr("p", 2);
+    int verbose = cmd.getOr("v", 0);
 
     u64 delta_p = std::pow(delta, lp);
     int prefixLen = static_cast<int>(std::ceil(std::log2(delta * 2 + 1)));
@@ -974,7 +988,7 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
     // fmap finish
 
     time.setTimePoint("fmap done");
-    std::cout << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB " << std::endl;
+    // std::cout << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB " << std::endl;
 
     std::vector<u8> choiceBit(n, 0);
 
@@ -1062,7 +1076,7 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
 
         auto dt = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() / double(1000);
 
-        std::cout << "b2a time: " << dt << " ms" << std::endl;
+        // std::cout << "b2a time: " << dt << " ms" << std::endl;
 
         std::vector<u64> sumDis(n * d * 2 * halfprefixLen, 0);
         std::vector<u64> e(n * d * 2 * halfprefixLen, 0);
@@ -1274,7 +1288,7 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
     recvFilter.join();
 
     time.setTimePoint("filter done");
-    std::cout << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB " << std::endl;
+    // std::cout << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB " << std::endl;
 
     std::thread sendOT([&] {
         SilentOtExtSender send;
@@ -1334,17 +1348,40 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
 
     auto e = time.setTimePoint("OT done");
 
-    for (int i = 0; i < choiceBit.size(); i++) {
-        if (choiceBit[i]) {
-            std::cout << "intersection at index " << i << std::endl;
+    if (verbose) {
+        for (int i = 0; i < choiceBit.size(); i++) {
+            if (choiceBit[i]) {
+                std::cout << "intersection at index " << i << std::endl;
+            }
+            if (choiceBit[i] && std::find(interIndices.begin(), interIndices.end(), i) == interIndices.end()) {
+                throw runtime_error("false positive in fuzzyPsi");
+            }
         }
-        if (choiceBit[i] && std::find(interIndices.begin(), interIndices.end(), i) == interIndices.end()) {
-            throw runtime_error("false positive in fuzzyPsi");
-        }
+        std::cout << time << std::endl;
     }
 
-    std::cout << time << std::endl;
+    if (lp == 1) {
+        std::cout << std::format(
+                         "[ours-prefix]    L1    {:^5}  {:^5}  {:^5}  {:^10.3f} "
+                         "{:^10.3f}",
+                         d,
+                         delta,
+                         n,
+                         (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0,
+                         std::chrono::duration_cast<std::chrono::microseconds>(e - s).count() / double(1000 * 1000))
+                  << std::endl;
+    } else {
+        std::cout << std::format(
+                         "[ours-prefix]    L2    {:^5}  {:^5}  {:^5}  {:^10.3f} "
+                         "{:^10.3f}",
+                         d,
+                         delta,
+                         n,
+                         (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0,
+                         std::chrono::duration_cast<std::chrono::microseconds>(e - s).count() / double(1000 * 1000))
+                  << std::endl;
+    }
 
-    std::cout << "comm: " << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB, "
-              << " time: " << std::chrono::duration_cast<std::chrono::microseconds>(e - s).count() / double(1000 * 1000) << " s" << std::endl;
+    // std::cout << "comm: " << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB, "
+    //           << " time: " << std::chrono::duration_cast<std::chrono::microseconds>(e - s).count() / double(1000 * 1000) << " s" << std::endl;
 }
