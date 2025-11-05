@@ -60,3 +60,6 @@ test/output.txt
 .clang-format
 .cache
 *.idx
+.py
+.txt
+.csv

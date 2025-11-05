@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <bitset>
 #include <cmath>
 #include <cryptoTools/Common/Defines.h>
@@ -103,11 +104,56 @@ inline std::vector<block> getIntervalPrefix(u64 start, u64 end, int shift = 0)
     return results;
 }
 
+inline u64 firstLessThan(u64 x, const std::vector<u64> &U)
+{
+    auto it = std::lower_bound(U.begin(), U.end(), x); // find the first element not less than x
+
+    if (it == U.begin()) {
+        // No element is less than x, return 0 or other appropriate value
+        return 0;
+    }
+
+    --it; // Move to the largest element less than x
+    return *it;
+}
+
+inline std::vector<block> getIntervalPrefixSet(u64 start, u64 end, std::vector<u64> U)
+{
+    std::vector<block> finalPrefixes;
+    auto prefixes = getIntervalPrefix(start, end);
+    for (auto &p : prefixes) {
+        u64 len = high(p);
+        u64 base = low(p);
+        if (std::find(U.begin(), U.end(), len) != U.end()) {
+            finalPrefixes.push_back(p);
+        } else {
+            u64 newLen = firstLessThan(len, U);
+
+            for (int j = 0; j < (1 << (len - newLen)); j++) {
+                finalPrefixes.push_back(block(newLen, (base << (len - newLen)) + j));
+            }
+        }
+    }
+
+    return finalPrefixes;
+}
+
 inline std::vector<block> getPrefix(u64 x, int maxLen)
 {
     std::vector<block> res;
 
     for (int len = 0; len < maxLen; len++) {
+        res.push_back(block(len, x >> (len)));
+    }
+
+    return res;
+}
+
+inline std::vector<block> getPrefixSet(u64 x, std::vector<u64> U)
+{
+    std::vector<block> res;
+
+    for (auto &len : U) {
         res.push_back(block(len, x >> (len)));
     }
 

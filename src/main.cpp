@@ -847,6 +847,7 @@ int main(int argc, char **argv)
             fuzzyPsi(cmd);
         }
     }
+
     return 0;
 
     // auto prefixes = getIntervalPrefix(13, 13 + 64);
