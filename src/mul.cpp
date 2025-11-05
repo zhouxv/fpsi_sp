@@ -8,6 +8,7 @@ MulSender::MulSender(uint64_t num_, coproto::Socket *socket_) : num(num_), socke
 {
     sender = new osuCrypto::SilentOtExtSender();
     sender->configure(num * 64);
+    sender->mMultType = type;
 
     prng = new PRNG(ZeroBlock);
 }
@@ -57,6 +58,7 @@ MulRecver::MulRecver(uint64_t num_, coproto::Socket *socket_) : num(num_), socke
 {
     receiver = new osuCrypto::SilentOtExtReceiver();
     receiver->configure(num * 64);
+    receiver->mMultType = type;
 
     prng = new PRNG(OneBlock);
 }

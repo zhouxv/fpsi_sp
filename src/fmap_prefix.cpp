@@ -570,6 +570,7 @@ void fuzzyPsiPrefix(const oc::CLP &cmd)
     std::thread sendOT([&] {
         SilentOtExtSender send;
         send.configure(n, 128);
+        send.mMultType = type;
 
         coproto::sync_wait(send.genSilentBaseOts(prng, sock[0]));
 
@@ -595,6 +596,7 @@ void fuzzyPsiPrefix(const oc::CLP &cmd)
     std::thread recvOT([&] {
         SilentOtExtReceiver recv;
         recv.configure(n, 128);
+        recv.mMultType = type;
 
         coproto::sync_wait(recv.genSilentBaseOts(prng, sock[1]));
 
@@ -1304,6 +1306,7 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
     std::thread sendOT([&] {
         SilentOtExtSender send;
         send.configure(n, 128);
+        send.mMultType = type;
 
         coproto::sync_wait(send.genSilentBaseOts(prng, sock[0]));
 
@@ -1329,6 +1332,7 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
     std::thread recvOT([&] {
         SilentOtExtReceiver recv;
         recv.configure(n, 128);
+        recv.mMultType = type;
 
         coproto::sync_wait(recv.genSilentBaseOts(prng, sock[1]));
 

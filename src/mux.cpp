@@ -59,9 +59,11 @@ MuxSender::MuxSender(uint64_t num_, coproto::Socket *socket_) : num(num_), socke
 {
     sender = new osuCrypto::SilentOtExtSender();
     sender->configure(num);
+    sender->mMultType = type;
 
     recver = new osuCrypto::SilentOtExtReceiver();
     recver->configure(num);
+    recver->mMultType = type;
 
     prng = new PRNG(ZeroBlock);
 }
@@ -212,9 +214,11 @@ MuxRecver::MuxRecver(uint64_t num_, coproto::Socket *socket_) : num(num_), socke
 {
     sender = new osuCrypto::SilentOtExtSender();
     sender->configure(num);
+    sender->mMultType = type;
 
     recver = new osuCrypto::SilentOtExtReceiver();
     recver->configure(num);
+    recver->mMultType = type;
 
     prng = new PRNG(OneBlock);
 }

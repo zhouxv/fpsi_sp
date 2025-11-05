@@ -25,7 +25,7 @@ SoOPRFSender::SoOPRFSender(uint64_t num_, uint64_t numThreads_, bool useOle_, co
     });
 
     ole = new CorGenerator();
-    ole->init(socket->fork(), *prng, 0, 1, 1 << 18, 0);
+    ole->init(socket->fork(), *prng, 0, 1, std::max(u64(1024), num << 8), 0);
 
     // std::vector<oc::block> rk(AltModPrf::KeySize);
 
@@ -79,7 +79,7 @@ SoOPRFRecver::SoOPRFRecver(uint64_t num_, uint64_t numThreads_, bool useOle_, co
     // AltModPrf::KeyType kk;
 
     ole = new CorGenerator();
-    ole->init(socket->fork(), *prng, 1, 1, 1 << 18, 0);
+    ole->init(socket->fork(), *prng, 1, 1, std::max(u64(1024), num << 8), 0);
 
     // std::vector<std::array<oc::block, 2>> sk(AltModPrf::KeySize);
 

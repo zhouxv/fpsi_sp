@@ -6,6 +6,7 @@
 #include <cryptoTools/Common/block.h>
 #include <cryptoTools/Crypto/AES.h>
 #include <emmintrin.h>
+#include <libOTe/TwoChooseOne/ConfigureCode.h>
 #include <tuple>
 #include <vector>
 
@@ -135,7 +136,8 @@ void inline Hash(std::vector<block> &input)
 {
     auto n8 = input.size() / 8 * 8;
 
-    block mask = OneBlock ^ AllOneBlock; // notOneBlock
+    // notOneBlock
+    // block mask = OneBlock ^ AllOneBlock;
 
     auto r = input.data();
 
@@ -176,3 +178,5 @@ inline uint64_t combination(uint64_t n, uint64_t k)
 
     return result;
 }
+
+const osuCrypto::MultType type = osuCrypto::MultType::Tungsten;
