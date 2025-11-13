@@ -213,7 +213,7 @@ inline uint64_t combination(uint64_t n, uint64_t k)
     if (k == 0 || k == n)
         return 1;
 
-    // 对称性：C(n, k) = C(n, n-k)
+    // C(n, k) = C(n, n-k)
     if (k > n - k)
         k = n - k;
 
