@@ -1,36 +1,62 @@
 # Fuzzy PSI
 
-## How to Build
+This repository provides the implementation and build scripts for fuzzy private set intersection.
+
+> Note: This project is experimental and primarily intended for research use. Adjust parameters according to your hardware and dataset sizes.
+
+## Requirements
+
+- `cmake`, `make`, `g++ 13`
+- Docker (optional, for isolated builds)
+- Additional third-party dependencies are installed by `./build.sh`
+
+## Local build
+
+From the project root directory:
 
 ```bash
-makedir build && cd build
+./build.sh    # installs third-party dependencies if needed
+mkdir -p build && cd build
 cmake ..
 make -j
+
+# The executable will be located at ./build/fpsi
 ```
 
+## Docker (optional)
 
-## Usage Guide for `./build/fpsi`
-
-This section describes the usage of the executable file located at `./build/main`.
-
-### Command Flags
-
-| Flag | Meaning             | Optional Values                                |
-|:----:|:-------------------:|----------------------------------------------|
-| d    | Dimension           |  |
-| m    | Metric              | `0`: $L_\infty$, `1`: $L_1$, `2`: $L_2$ |
-| delta| $\delta$              | Should be power of 2  |
-| nn    | The logarithm of the input set size | Tested values: `4`, `8`(default), `12` (only supports balanced case) |
-| v | Verbose | `0`: off, `1`: info(default), `2`: debug, `3`: error |
-| try | Number of executions | 1 (default value) |
-| prefix | Prefix optimization | 0 (default value) |
-
-### Usage samples
+Use Docker for an isolated or reproducible build environment:
 
 ```bash
-# fuzzy PSI 
-./fpsi -nn 8 -d 8 -delta 16 -p 0 -v 1
+docker build -t <your-image-name> .
+docker run -it --name <your-container-name> --cap-add=NET_ADMIN --memory=512g <your-image-name>
+docker exec -it <your-container-name> bash
+```
 
-# fuzzy PSI with prefix optimization
-./fpsi -nn 8 -d 8 -delta 16 -p 0 -v 1 -prefix
+## Executable: `./build/fpsi`
+
+Below are the commonly used command-line flags. Flags use a leading dash (for example `-nn`, `-d`).
+
+| Flag | Meaning | Values / Notes |
+|---|---|---|
+| `-d` | Dimension | integer |
+| `-m` | Metric | `0`: $L_\infty$, `1`: $L_1$, `2`: $L_2$ |
+| `-delta` | Distance threshold (δ) | recommended to be a power of 2 |
+| `-nn` | log2 of input set size | tested values: `8`~`16` |
+| `-v` | Verbosity | `0`: off (default), `1`: info |
+| `-try` | Number of runs | integer, default `1` |
+| `-prefix` | Prefix optimization flag | `0`: off (default), `1`: on |
+
+### Usage examples
+
+Run a basic fuzzy PSI experiment:
+
+```bash
+./fpsi -nn 8 -d 8 -delta 16 -v 1
+```
+
+Enable prefix optimization:
+
+```bash
+./fpsi -nn 8 -d 8 -delta 16 -v 1 -prefix 1
 ```
