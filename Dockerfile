@@ -27,8 +27,9 @@ WORKDIR /root
 
 COPY . /root/FPSI
 
-RUN chmod +x /root/FPSI/build.sh && \
-    /root/FPSI/build.sh
+RUN cd /root/FPSI && \
+    chmod +x build.sh && \
+    ./build.sh
 
 RUN mkdir -p /root/FPSI/build && \
     cd /root/FPSI/build && \

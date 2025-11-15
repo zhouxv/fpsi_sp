@@ -7,31 +7,25 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_BUILD_TYPE Release)
 
+set(CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/thirdparty/out/install")
 include_directories(include)
+include_directories(${CMAKE_SOURCE_DIR}/thirdparty/out/install/include)
 
 file(GLOB SOURCES src/*.cpp)
 
 add_executable(fpsi ${SOURCES})
 
 # secureJoin
+target_include_directories(fpsi PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/out/install/include/secureJoin)
 
-target_include_directories(fpsi PRIVATE
-  /usr/local/include/secureJoin
-)
-
+# Dependencies
 find_package(cryptoTools REQUIRED)
 find_package(libOTe REQUIRED)
 find_package(volePSI REQUIRED)
 find_package(fmt REQUIRED)
-# find_package(Kuku 2.1 QUIET REQUIRED)
 
-target_link_libraries(fpsi PRIVATE secureJoin oc::cryptoTools libOTe visa::volePSI fmt::fmt)
-
-# PIRANA
-
-# add_subdirectory(thirdparty/PIRANA)
-# target_include_directories(fpsi PRIVATE thirdparty/PIRANA/src)
-# target_link_libraries(fpsi PRIVATE pirana)
+target_link_libraries(fpsi PRIVATE oc::cryptoTools oc::libOTe visa::volePSI fmt::fmt)
+target_link_libraries(fpsi PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/out/install/lib/libsecureJoin.a)
 
 # OKVS
 add_subdirectory(thirdparty/OKVS)
