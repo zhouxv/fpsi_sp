@@ -60,3 +60,7 @@ test/output.txt
 .clang-format
 .cache
 *.idx
+
+thirdparty/secure-join
+thirdparty/out
+thirdparty/volepsi
