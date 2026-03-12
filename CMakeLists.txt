@@ -27,10 +27,6 @@ find_package(fmt REQUIRED)
 target_link_libraries(fpsi PRIVATE oc::cryptoTools oc::libOTe visa::volePSI fmt::fmt)
 target_link_libraries(fpsi PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/out/install/lib/libsecureJoin.a)
 
-# OKVS
-add_subdirectory(thirdparty/OKVS)
-target_include_directories(fpsi PRIVATE thirdparty/OKVS)
-target_link_libraries(fpsi PRIVATE okvs)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build)
 
