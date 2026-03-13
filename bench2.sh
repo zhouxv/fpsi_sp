@@ -21,9 +21,9 @@ deltas=(16 64 256 1024)
 for n in "${ns[@]}"; do
   for dim in "${dims[@]}"; do
     for delta in "${deltas[@]}"; do
-      ./build/fpsi -d $dim -delta $delta -nn $n -p 0 -prefix
-      ./build/fpsi -d $dim -delta $delta -nn $n -p 1 -prefix 
-      ./build/fpsi -d $dim -delta $delta -nn $n -p 2 -prefix 
+      ./build/fpsi -d $dim -delta $delta -nn $n -p 0 -prefix -try 5
+      ./build/fpsi -d $dim -delta $delta -nn $n -p 1 -prefix -try 5
+      ./build/fpsi -d $dim -delta $delta -nn $n -p 2 -prefix -try 5
       echo
     done
   done

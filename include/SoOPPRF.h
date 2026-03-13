@@ -13,6 +13,8 @@ public:
 
     void OPPRF(std::vector<oc::block> encoding, std::vector<oc::block> &y0);
 
+    task<> run_oprf(std::vector<oc::block> &y0);
+
 private:
     OKVS *okvs;
 };

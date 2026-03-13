@@ -1,4 +1,4 @@
-#include "fmap.h"
+#include "fpsi.h"
 #include <cmath>
 #include <coproto/Socket/AsioSocket.h>
 #include <cryptoTools/Common/Defines.h>
@@ -6,6 +6,9 @@
 #include <cstdlib>
 #include <format>
 #include <iostream>
+#include <macoro/sync_wait.h>
+#include <macoro/when_all.h>
+#include <thread>
 #include <vector>
 #include "OKVS.h"
 #include "SiOPRF.h"
@@ -104,6 +107,177 @@ void LocalMap(std::vector<std::vector<u64>> &inputs, std::vector<block> &pid, st
     Hash(listKey);
 }
 
+void FuzzyMap(
+    u64 n,
+    size_t d,
+    int delta,
+    std::vector<std::vector<u64>> &sendSet,
+    std::vector<block> &sendPid,
+    std::vector<block> &senderOKVS,
+    std::vector<std::vector<u64>> &recvSet,
+    std::vector<block> &recvPid,
+    std::vector<block> &recverOKVS,
+    std::vector<block> &ID_R,
+    std::vector<block> &ID_S,
+    AltModPrf::KeyType &k0,
+    AltModPrf::KeyType &k1,
+    std::array<coproto::AsioSocket, 2> &sock,
+    std::array<coproto::AsioSocket, 2> &sock2,
+    oc::Timer &time)
+{
+    std::vector<block> rand_R_j(n);
+    std::vector<block> rand_S_j(n);
+
+    std::thread sendSoOPPRFReverse([&] {
+        SoOPPRFRecver recv(n * d, n * d * (2 * delta + 1), 1, false, &sock[0]);
+
+        std::vector<block> inputs(n * d);
+        for (u64 i = 0; i < n; i++) {
+            for (u64 j = 0; j < d; j++) {
+                inputs[i * d + j] = block(j, sendSet[i][j]);
+            }
+        }
+        std::vector<block> rand_S(n * d);
+
+        Hash(inputs);
+        recv.OPPRF(inputs, rand_S);
+
+        for (u64 i = 0; i < n; i++) {
+            for (u64 j = 0; j < d; j++) {
+                rand_S_j[i] ^= rand_S[i * d + j];
+            }
+            rand_S_j[i] = rand_S_j[i] ^ sendPid[i];
+        }
+    });
+
+    std::thread recvSoOPPRFReverse([&] {
+        SoOPPRFSender send(n * d, n * d * (2 * delta + 1), 1, false, &sock[1]);
+
+        std::vector<block> rand_R(n * d);
+
+        // send.OPPRF(recvListKey, recvListVal, rand_R);
+        send.OPPRF(recverOKVS, rand_R);
+
+        for (u64 i = 0; i < n; i++) {
+            for (u64 j = 0; j < d; j++) {
+                rand_R_j[i] ^= rand_R[i * d + j];
+            }
+        }
+    });
+
+    sendSoOPPRFReverse.join();
+    recvSoOPPRFReverse.join();
+
+    time.setTimePoint("soOPRF Reverse done");
+
+    std::thread sendSiOPRFReverse([&] {
+        SiOPRFRecver siRecv(n, 1, false, &sock[0], &sock2[0], k0);
+
+        std::vector<block> share_S(n);
+
+        siRecv.OPRF(rand_S_j, share_S);
+
+        std::vector<block> share_R(n);
+
+        coproto::sync_wait(sock[0].recv(share_R));
+
+        for (int i = 0; i < n; i++) {
+            ID_S[i] = share_R[i] ^ share_S[i];
+        }
+    });
+
+    std::thread recvSiOPRFReverse([&] {
+        SiOPRFSender siSend(n, 1, false, &sock[1], &sock2[1], k1);
+
+        std::vector<block> share_R(n);
+
+        siSend.OPRF(rand_R_j, share_R);
+
+        coproto::sync_wait(sock[1].send(share_R));
+    });
+
+    sendSiOPRFReverse.join();
+    recvSiOPRFReverse.join();
+
+    time.setTimePoint("siOPRF Reverse done");
+
+    rand_R_j = std::vector<block>(n, ZeroBlock);
+    rand_S_j = std::vector<block>(n, ZeroBlock);
+
+    std::thread sendSoOPPRF([&] {
+        SoOPPRFSender send(n * d, n * d * (2 * delta + 1), 1, false, &sock[0]);
+
+        std::vector<block> rand_S(n * d);
+
+        // send.OPPRF(sendListKey, sendListVal, rand_S);
+        send.OPPRF(senderOKVS, rand_S);
+
+        for (u64 i = 0; i < n; i++) {
+            for (u64 j = 0; j < d; j++) {
+                rand_S_j[i] ^= rand_S[i * d + j];
+            }
+        }
+    });
+
+    std::thread recvSoOPPRF([&] {
+        SoOPPRFRecver recv(n * d, n * d * (2 * delta + 1), 1, false, &sock[1]);
+
+        std::vector<block> inputs(n * d);
+        for (u64 i = 0; i < n; i++) {
+            for (u64 j = 0; j < d; j++) {
+                inputs[i * d + j] = block(j, recvSet[i][j]);
+            }
+        }
+        std::vector<block> rand_R(n * d);
+
+        Hash(inputs);
+        recv.OPPRF(inputs, rand_R);
+
+        for (u64 i = 0; i < n; i++) {
+            for (u64 j = 0; j < d; j++) {
+                rand_R_j[i] ^= rand_R[i * d + j];
+            }
+            rand_R_j[i] = rand_R_j[i] ^ recvPid[i];
+        }
+    });
+
+    sendSoOPPRF.join();
+    recvSoOPPRF.join();
+
+    time.setTimePoint("soOPRF done");
+
+    std::thread sendSiOPRF([&] {
+        SiOPRFSender siSend(n, 1, false, &sock[0], &sock2[0], k0);
+
+        std::vector<block> share_S(n);
+
+        siSend.OPRF(rand_S_j, share_S);
+
+        coproto::sync_wait(sock[0].send(share_S));
+    });
+
+    std::thread recvSiOPRF([&] {
+        SiOPRFRecver siRecv(n, 1, false, &sock[1], &sock2[1], k1);
+
+        std::vector<block> share_R(n);
+
+        siRecv.OPRF(rand_R_j, share_R);
+
+        std::vector<block> share_S(n);
+
+        coproto::sync_wait(sock[1].recv(share_S));
+
+        for (int i = 0; i < n; i++) {
+            ID_R[i] = share_R[i] ^ share_S[i];
+        }
+    });
+
+    sendSiOPRF.join();
+    recvSiOPRF.join();
+
+    time.setTimePoint("siOPRF done");
+}
+
 void fuzzyPsi(const oc::CLP &cmd)
 {
     u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 10));
@@ -199,172 +373,21 @@ void fuzzyPsi(const oc::CLP &cmd)
     auto sock2 = coproto::AsioSocket::makePair();
 
     for (int tryIdx = 0; tryIdx < numTry; tryIdx++) {
-        std::vector<block> rand_R_j(n, ZeroBlock);
-        std::vector<block> rand_S_j(n, ZeroBlock);
-
         std::vector<block> ID_R(n);
         std::vector<block> ID_S(n);
+        std::vector<block> rand_R_j(n);
+        std::vector<block> rand_S_j(n);
 
         AltModPrf RO(prng.get());
         auto key = RO.mExpandedKey;
         AltModPrf::KeyType k1 = prng.get();
         AltModPrf::KeyType k0 = k1 ^ key;
 
-        std::thread sendSoOPPRFReverse([&] {
-            SoOPPRFRecver recv(n * d, n * d * (2 * delta + 1), 1, false, &sock[0]);
-
-            std::vector<block> inputs(n * d);
-            for (u64 i = 0; i < n; i++) {
-                for (u64 j = 0; j < d; j++) {
-                    inputs[i * d + j] = block(j, sendSet[i][j]);
-                }
-            }
-            std::vector<block> rand_S(n * d);
-
-            Hash(inputs);
-            recv.OPPRF(inputs, rand_S);
-
-            for (u64 i = 0; i < n; i++) {
-                for (u64 j = 0; j < d; j++) {
-                    rand_S_j[i] ^= rand_S[i * d + j];
-                }
-                rand_S_j[i] = rand_S_j[i] ^ sendPid[i];
-            }
-        });
-
-        std::thread recvSoOPPRFReverse([&] {
-            SoOPPRFSender send(n * d, n * d * (2 * delta + 1), 1, false, &sock[1]);
-
-            std::vector<block> rand_R(n * d);
-
-            // send.OPPRF(recvListKey, recvListVal, rand_R);
-            send.OPPRF(recverOKVS, rand_R);
-
-            for (u64 i = 0; i < n; i++) {
-                for (u64 j = 0; j < d; j++) {
-                    rand_R_j[i] ^= rand_R[i * d + j];
-                }
-            }
-        });
-
-        sendSoOPPRFReverse.join();
-        recvSoOPPRFReverse.join();
-
-        time.setTimePoint("soOPRF Reverse done");
-
-        std::thread sendSiOPRFReverse([&] {
-            SiOPRFRecver siRecv(n, 1, false, &sock[0], &sock2[0], k0);
-
-            std::vector<block> share_S(n);
-
-            siRecv.OPRF(rand_S_j, share_S);
-
-            std::vector<block> share_R(n);
-
-            coproto::sync_wait(sock[0].recv(share_R));
-
-            for (int i = 0; i < n; i++) {
-                ID_S[i] = share_R[i] ^ share_S[i];
-            }
-        });
-
-        std::thread recvSiOPRFReverse([&] {
-            SiOPRFSender siSend(n, 1, false, &sock[1], &sock2[1], k1);
-
-            std::vector<block> share_R(n);
-
-            siSend.OPRF(rand_R_j, share_R);
-
-            coproto::sync_wait(sock[1].send(share_R));
-        });
-
-        sendSiOPRFReverse.join();
-        recvSiOPRFReverse.join();
-
-        time.setTimePoint("siOPRF Reverse done");
-
-        rand_R_j = std::vector<block>(n, ZeroBlock);
-        rand_S_j = std::vector<block>(n, ZeroBlock);
-
-        std::thread sendSoOPPRF([&] {
-            SoOPPRFSender send(n * d, n * d * (2 * delta + 1), 1, false, &sock[0]);
-
-            std::vector<block> rand_S(n * d);
-
-            // send.OPPRF(sendListKey, sendListVal, rand_S);
-            send.OPPRF(senderOKVS, rand_S);
-
-            for (u64 i = 0; i < n; i++) {
-                for (u64 j = 0; j < d; j++) {
-                    rand_S_j[i] ^= rand_S[i * d + j];
-                }
-            }
-        });
-
-        std::thread recvSoOPPRF([&] {
-            SoOPPRFRecver recv(n * d, n * d * (2 * delta + 1), 1, false, &sock[1]);
-
-            std::vector<block> inputs(n * d);
-            for (u64 i = 0; i < n; i++) {
-                for (u64 j = 0; j < d; j++) {
-                    inputs[i * d + j] = block(j, recvSet[i][j]);
-                }
-            }
-            std::vector<block> rand_R(n * d);
-
-            Hash(inputs);
-            recv.OPPRF(inputs, rand_R);
-
-            for (u64 i = 0; i < n; i++) {
-                for (u64 j = 0; j < d; j++) {
-                    rand_R_j[i] ^= rand_R[i * d + j];
-                }
-                rand_R_j[i] = rand_R_j[i] ^ recvPid[i];
-            }
-        });
-
-        sendSoOPPRF.join();
-        recvSoOPPRF.join();
-
-        time.setTimePoint("soOPRF done");
-
-        std::thread sendSiOPRF([&] {
-            SiOPRFSender siSend(n, 1, false, &sock[0], &sock2[0], k0);
-
-            std::vector<block> share_S(n);
-
-            siSend.OPRF(rand_S_j, share_S);
-
-            coproto::sync_wait(sock[0].send(share_S));
-        });
-
-        std::thread recvSiOPRF([&] {
-            SiOPRFRecver siRecv(n, 1, false, &sock[1], &sock2[1], k1);
-
-            std::vector<block> share_R(n);
-
-            siRecv.OPRF(rand_R_j, share_R);
-
-            std::vector<block> share_S(n);
-
-            coproto::sync_wait(sock[1].recv(share_S));
-
-            for (int i = 0; i < n; i++) {
-                ID_R[i] = share_R[i] ^ share_S[i];
-            }
-        });
-
-        sendSiOPRF.join();
-        recvSiOPRF.join();
-
-        time.setTimePoint("siOPRF done");
+        FuzzyMap(n, d, delta, sendSet, sendPid, senderOKVS, recvSet, recvPid, recverOKVS, ID_R, ID_S, k0, k1, sock, sock2, time);
 
         // for (u64 i = 0; i < n; i++) {
         //     std::cout << "Sender ID: " << ID_S[i] << " Receiver ID: " << ID_R[i] << " " << i << std::endl;
         // }
-
-        rand_R_j = std::vector<block>(n);
-        rand_S_j = std::vector<block>(n);
 
         // fmap finish
         time.setTimePoint("fmap done");
@@ -639,168 +662,17 @@ void fuzzyPsiLp(const oc::CLP &cmd)
     auto sock2 = coproto::AsioSocket::makePair();
 
     for (int tryIdx = 0; tryIdx < numTry; tryIdx++) {
-        std::vector<block> rand_R_j(n);
-        std::vector<block> rand_S_j(n);
-
         std::vector<block> ID_R(n);
         std::vector<block> ID_S(n);
+        std::vector<block> rand_R_j(n);
+        std::vector<block> rand_S_j(n);
 
         AltModPrf RO(prng.get());
         auto key = RO.mExpandedKey;
         AltModPrf::KeyType k1 = prng.get();
         AltModPrf::KeyType k0 = k1 ^ key;
 
-        std::thread sendSoOPPRFReverse([&] {
-            SoOPPRFRecver recv(n * d, n * d * (2 * delta + 1), 1, false, &sock[0]);
-
-            std::vector<block> inputs(n * d);
-            for (u64 i = 0; i < n; i++) {
-                for (u64 j = 0; j < d; j++) {
-                    inputs[i * d + j] = block(j, sendSet[i][j]);
-                }
-            }
-            std::vector<block> rand_S(n * d);
-
-            Hash(inputs);
-            recv.OPPRF(inputs, rand_S);
-
-            for (u64 i = 0; i < n; i++) {
-                for (u64 j = 0; j < d; j++) {
-                    rand_S_j[i] ^= rand_S[i * d + j];
-                }
-                rand_S_j[i] = rand_S_j[i] ^ sendPid[i];
-            }
-        });
-
-        std::thread recvSoOPPRFReverse([&] {
-            SoOPPRFSender send(n * d, n * d * (2 * delta + 1), 1, false, &sock[1]);
-
-            std::vector<block> rand_R(n * d);
-
-            // send.OPPRF(recvListKey, recvListVal, rand_R);
-            send.OPPRF(recverOKVS, rand_R);
-
-            for (u64 i = 0; i < n; i++) {
-                for (u64 j = 0; j < d; j++) {
-                    rand_R_j[i] ^= rand_R[i * d + j];
-                }
-            }
-        });
-
-        sendSoOPPRFReverse.join();
-        recvSoOPPRFReverse.join();
-
-        time.setTimePoint("soOPRF Reverse done");
-
-        std::thread sendSiOPRFReverse([&] {
-            SiOPRFRecver siRecv(n, 1, false, &sock[0], &sock2[0], k0);
-
-            std::vector<block> share_S(n);
-
-            siRecv.OPRF(rand_S_j, share_S);
-
-            std::vector<block> share_R(n);
-
-            coproto::sync_wait(sock[0].recv(share_R));
-
-            for (int i = 0; i < n; i++) {
-                ID_S[i] = share_R[i] ^ share_S[i];
-            }
-        });
-
-        std::thread recvSiOPRFReverse([&] {
-            SiOPRFSender siSend(n, 1, false, &sock[1], &sock2[1], k1);
-
-            std::vector<block> share_R(n);
-
-            siSend.OPRF(rand_R_j, share_R);
-
-            coproto::sync_wait(sock[1].send(share_R));
-        });
-
-        sendSiOPRFReverse.join();
-        recvSiOPRFReverse.join();
-
-        time.setTimePoint("siOPRF Reverse done");
-
-        rand_R_j = std::vector<block>(n);
-        rand_S_j = std::vector<block>(n);
-
-        std::thread sendSoOPPRF([&] {
-            SoOPPRFSender send(n * d, n * d * (2 * delta + 1), 1, false, &sock[0]);
-
-            std::vector<block> rand_S(n * d);
-
-            // send.OPPRF(sendListKey, sendListVal, rand_S);
-            send.OPPRF(senderOKVS, rand_S);
-
-            for (u64 i = 0; i < n; i++) {
-                for (u64 j = 0; j < d; j++) {
-                    rand_S_j[i] ^= rand_S[i * d + j];
-                }
-            }
-        });
-
-        std::thread recvSoOPPRF([&] {
-            SoOPPRFRecver recv(n * d, n * d * (2 * delta + 1), 1, false, &sock[1]);
-
-            std::vector<block> inputs(n * d);
-            for (u64 i = 0; i < n; i++) {
-                for (u64 j = 0; j < d; j++) {
-                    inputs[i * d + j] = block(j, recvSet[i][j]);
-                }
-            }
-            std::vector<block> rand_R(n * d);
-
-            Hash(inputs);
-            recv.OPPRF(inputs, rand_R);
-
-            for (u64 i = 0; i < n; i++) {
-                for (u64 j = 0; j < d; j++) {
-                    rand_R_j[i] ^= rand_R[i * d + j];
-                }
-                rand_R_j[i] = rand_R_j[i] ^ recvPid[i];
-            }
-        });
-
-        sendSoOPPRF.join();
-        recvSoOPPRF.join();
-
-        time.setTimePoint("soOPRF done");
-
-        std::thread sendSiOPRF([&] {
-            SiOPRFSender siSend(n, 1, false, &sock[0], &sock2[0], k0);
-
-            std::vector<block> share_S(n);
-
-            siSend.OPRF(rand_S_j, share_S);
-
-            coproto::sync_wait(sock[0].send(share_S));
-        });
-
-        std::thread recvSiOPRF([&] {
-            SiOPRFRecver siRecv(n, 1, false, &sock[1], &sock2[1], k1);
-
-            std::vector<block> share_R(n);
-
-            siRecv.OPRF(rand_R_j, share_R);
-
-            std::vector<block> share_S(n);
-
-            coproto::sync_wait(sock[1].recv(share_S));
-
-            for (int i = 0; i < n; i++) {
-                ID_R[i] = share_R[i] ^ share_S[i];
-            }
-        });
-
-        sendSiOPRF.join();
-        recvSiOPRF.join();
-
-        time.setTimePoint("siOPRF done");
-
-        rand_R_j = std::vector<block>(n);
-        rand_S_j = std::vector<block>(n);
+        FuzzyMap(n, d, delta, sendSet, sendPid, senderOKVS, recvSet, recvPid, recverOKVS, ID_R, ID_S, k0, k1, sock, sock2, time);
 
         // fmap finish
         time.setTimePoint("fmap done");
