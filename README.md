@@ -47,7 +47,7 @@ Below are the commonly used command-line flags. Flags use a leading dash (for ex
 | `-try` | Number of runs | integer, default `1` |
 | `-prefix` | Prefix optimization flag | `0`: off (default), `1`: on |
 
-### Usage examples
+## Usage examples
 
 Run a basic fuzzy PSI experiment:
 
@@ -61,12 +61,12 @@ Enable prefix optimization:
 ./fpsi -nn 8 -d 8 -delta 16 -v 1 -prefix 1
 ```
 
-# Benchmark Instructions
+## Benchmark Instructions
 
 We provide two scripts to reproduce the benchmark results reported in
 the paper.
 
-## Table 2 Results
+### Table 2 Results
 
 To reproduce the results in **Table 2**, run:
 
@@ -92,7 +92,7 @@ where:
 -   **Size** corresponds to the input set size $n$
 ------------------------------------------------------------------------
 
-## Table 3 Results
+### Table 3 Results
 
 To reproduce the results in **Table 3**, run:
 
@@ -104,11 +104,11 @@ from the root directory of this repository.
 
 ------------------------------------------------------------------------
 
-# Baseline Implementations
+## Baseline Implementations
 
 The following baseline implementations are used for comparison.
 
-## Gao et al.[14]
+### Gao et al.[14]
 
 Code repository:
 
@@ -120,7 +120,7 @@ Recommended Docker image:
 
 ------------------------------------------------------------------------
 
-## Dang et al.[16]
+### Dang et al.[16]
 
 Code repository:
 
@@ -132,7 +132,7 @@ Recommended Docker image:
 
 ------------------------------------------------------------------------
 
-# Research Claims
+## Research Claims
 
 Our paper proposes two main constructions:
 
@@ -141,7 +141,7 @@ Our paper proposes two main constructions:
 
 ------------------------------------------------------------------------
 
-## Basic Fuzzy PSI
+### Basic Fuzzy PSI
 
 For the **basic fuzzy PSI construction**, both the running time and
 communication cost grow **linearly** with:
@@ -167,7 +167,7 @@ other hardware factors.
 
 ------------------------------------------------------------------------
 
-## Prefix Fuzzy PSI
+### Prefix Fuzzy PSI
 
 For **fuzzy PSI with prefix optimization**, the running time and
 communication cost grow linearly with:
@@ -189,9 +189,14 @@ implementation achieves approximately:
 -   **7--10× improvement in communication efficiency**
 -   **13--38× improvement in computational efficiency**
 
-Communication cost is independent of the hardware platform, while
+Note that communication cost is independent of the hardware platform, while
 running time may vary depending on CPU parameters such as frequency
 and cache size.
+
+### Source Code Location
+- `src/*.cpp` contains the implementations of our building blocks such as `si-OPRF`, `so-OPRF`, `so-OPPRF` and other MPC components
+- `src/fpsi.cpp` contains the implementations of basic `fuzzy mapping`, `fuzzy PSI` protocol
+- `src/fpsi_prefix.cpp` contains the implementations of **prefix-optimized** `fuzzy mapping`, `fuzzy PSI` protocol
 
 ## Note
 
