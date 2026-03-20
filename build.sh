@@ -3,6 +3,7 @@ set -e
 apt update
 apt install -y build-essential cmake git libtool iproute2 python3 sudo nasm libssl-dev libgmp-dev wget libfmt-dev
 
+mkdir thirdparty
 cd thirdparty
 
 ## Build secure-join

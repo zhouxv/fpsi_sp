@@ -15,7 +15,7 @@ This repository provides the implementation and build scripts for fuzzy private 
 From the project root directory:
 
 ```bash
-./build.sh    # installs third-party dependencies if needed
+./build.sh    # installs third-party dependencies if needed (about 10-15 mins)
 mkdir -p build && cd build
 cmake ..
 make -j
