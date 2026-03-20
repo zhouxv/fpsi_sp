@@ -2,6 +2,8 @@ FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+WORKDIR /home
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     openssl \
@@ -23,15 +25,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /root
+COPY . /home/FPSI
 
-COPY . /root/FPSI
-
-RUN cd /root/FPSI && \
+RUN cd /home/FPSI && \
     chmod +x build.sh && \
     ./build.sh
 
-RUN mkdir -p /root/FPSI/build && \
-    cd /root/FPSI/build && \
+RUN mkdir -p /home/FPSI/build && \
+    cd /home/FPSI/build && \
     cmake .. && \
     make -j
+
+WORKDIR /home/FPSI
