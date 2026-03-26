@@ -4,11 +4,35 @@ This repository provides the implementation and build scripts for fuzzy private 
 
 > Note: This project is experimental and primarily intended for research use. Adjust parameters according to your hardware and dataset sizes.
 
+
+## Source Code Location of Main Functionality
+- `src/*.cpp` contains the implementations of our building blocks such as `si-OPRF`, `so-OPRF`, `so-OPPRF` and other MPC components
+- `src/fpsi.cpp` contains the implementations of basic `fuzzy mapping`, `fuzzy PSI` protocol
+- `src/fpsi_prefix.cpp` contains the implementations of **prefix-optimized** `fuzzy mapping`, `fuzzy PSI` protocol
+
 ## Requirements
 
 - `cmake`, `make`, `g++ 13`
 - Docker (optional, for isolated builds)
-- Additional third-party dependencies are installed by `./build.sh`
+- Additional third-party libraries [secure-join](https://github.com/Visa-Research/secure-join.git) and [volePSI](https://github.com/ladnir/volepsi.git) (can be installed by the script [build.sh](./build.sh))
+
+
+- **Dependencies :**
+
+```bash
+build-essential
+cmake
+git 
+libtool 
+iproute2 
+python3 
+sudo 
+nasm 
+libssl-dev 
+libgmp-dev 
+wget 
+libfmt-dev
+```
 
 ## Local build
 
@@ -193,14 +217,25 @@ Note that communication cost is independent of the hardware platform, while
 running time may vary depending on CPU parameters such as frequency
 and cache size.
 
-### Source Code Location
-- `src/*.cpp` contains the implementations of our building blocks such as `si-OPRF`, `so-OPRF`, `so-OPPRF` and other MPC components
-- `src/fpsi.cpp` contains the implementations of basic `fuzzy mapping`, `fuzzy PSI` protocol
-- `src/fpsi_prefix.cpp` contains the implementations of **prefix-optimized** `fuzzy mapping`, `fuzzy PSI` protocol
 
-## Note
+### Note
 
 The running time of the baseline implementations can be quite large for certain parameter settings. 
 Evaluating all parameter combinations may take more than **1 day** to complete.
 
 We recommend selecting appropriate parameters for experiments according to the computational capability of your hardware platform.
+
+
+
+## Citation
+
+If you make use of our work, please consider citing us:
+
+```bibtex
+@INPROCEEDINGS {
+    author = { Xinpeng, Yang and Meng, Hao and Chenkai, Weng and Robert H., Deng and Yonggang, Wen and Tianwei, Zhang },
+    booktitle = { 2026 IEEE Symposium on Security and Privacy (SP) },
+    title = {{ Efficient Fuzzy Private Set Intersection from Secret-shared OPRF }},
+    year = {2026},
+}
+```
