@@ -12,6 +12,7 @@ This repository provides the implementation and build scripts for fuzzy private 
 
 ## Requirements
 
+- Linux on **AMD64** Only
 - `cmake`, `make`, `g++ 13`
 - Docker (optional, for isolated builds)
 - Additional third-party libraries [secure-join](https://github.com/Visa-Research/secure-join.git) and [volePSI](https://github.com/ladnir/volepsi.git) (can be installed by the script [build.sh](./build.sh))
