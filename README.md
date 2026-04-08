@@ -1,11 +1,11 @@
-# Fuzzy PSI
+# Efficient Fuzzy Private Set Intersection from Secret-shared OPRF
 
 This repository provides the implementation and build scripts for fuzzy private set intersection.
 
 > Note: This project is experimental and primarily intended for research use. Adjust parameters according to your hardware and dataset sizes.
 
 
-## Source Code Location of Main Functionality
+## Location of Main Functionality
 - `src/*.cpp` contains the implementations of our building blocks such as `si-OPRF`, `so-OPRF`, `so-OPPRF` and other MPC components
 - `src/fpsi.cpp` contains the implementations of basic `fuzzy mapping`, `fuzzy PSI` protocol
 - `src/fpsi_prefix.cpp` contains the implementations of **prefix-optimized** `fuzzy mapping`, `fuzzy PSI` protocol
@@ -58,7 +58,7 @@ docker run -it --name <your-container-name> --cap-add=NET_ADMIN --memory=512g <y
 docker exec -it <your-container-name> bash
 ```
 
-## Executable: `./build/fpsi`
+## Command-line Options
 
 Below are the commonly used command-line flags. Flags use a leading dash (for example `-nn`, `-d`).
 
@@ -72,7 +72,7 @@ Below are the commonly used command-line flags. Flags use a leading dash (for ex
 | `-try` | Number of runs | integer, default `1` |
 | `-prefix` | Prefix optimization flag | `0`: off (default), `1`: on |
 
-## Usage examples
+## Usage Examples
 
 Run a basic fuzzy PSI experiment:
 
@@ -86,58 +86,14 @@ Enable prefix optimization:
 ./fpsi -nn 8 -d 8 -delta 16 -v 1 -prefix 1
 ```
 
-## Benchmark Instructions
-
-We provide two scripts to reproduce the benchmark results reported in
-the paper.
-
-### Table 2 Results
-
-To reproduce the results in **Table 2**, run:
-
-``` bash
-./bench1.sh
-```
-
-from the root directory of this repository.
-
-The script produces output similar to (the results are averaged for 5 repeated run):
-
-    [ProType] [Metric] [Dim] [Delta] [Size] [Com.(MB)] [Time(s)]
-    [ours]    L0      4     16     256     7.343      0.782
-    [ours]    L1      4     16     256     7.802      0.916
-    [ours]    L2      4     16     256     7.839      1.009
-
-where:
-
--   **L0 / L1 / L2** correspond to the metrics $L_\infty$, $L_1$, and
-    $L_2$
--   **Dim** corresponds to parameter $d$
--   **Delta** corresponds to parameter $\delta$
--   **Size** corresponds to the input set size $n$
-------------------------------------------------------------------------
-
-### Table 3 Results
-
-To reproduce the results in **Table 3**, run:
-
-``` bash
-./bench2.sh
-```
-
-from the root directory of this repository.
-
 ------------------------------------------------------------------------
 
 ## Baseline Implementations
 
 The following baseline implementations are used for comparison.
 
-### Gao et al.[14]
-
-Code repository:
-
-https://github.com/ql70ql70/Fuzzy-Private-Set-Intersection-from-Fuzzy-Mapping
+### Gao et al. 
+[Code](https://github.com/ql70ql70/Fuzzy-Private-Set-Intersection-from-Fuzzy-Mapping) |   [Paper](https://eprint.iacr.org/2024/1462)
 
 Recommended Docker image:
 
@@ -145,88 +101,15 @@ Recommended Docker image:
 
 ------------------------------------------------------------------------
 
-### Dang et al.[16]
+### Dang et al.
 
-Code repository:
-
-https://github.com/zhouxv/ourFuzzyPSI-C
+[Code](https://github.com/zhouxv/ourFuzzyPSI-C) | [Paper](https://eprint.iacr.org/2025/1796)
 
 Recommended Docker image:
 
     blueobsidian/fpsi_artifact:latest
 
 ------------------------------------------------------------------------
-
-## Research Claims
-
-Our paper proposes two main constructions:
-
-1.  **Basic Fuzzy PSI** (without prefix optimization)
-2.  **Prefix Fuzzy PSI**
-
-------------------------------------------------------------------------
-
-### Basic Fuzzy PSI
-
-For the **basic fuzzy PSI construction**, both the running time and
-communication cost grow **linearly** with:
-
--   the input size ($n$)
--   the dimension ($d$)
--   the distance threshold ($\delta$)
-
-This linear trend becomes observable when the parameters are
-sufficiently large.\
-For example, when $n > 2^{{12}}$, the setup cost becomes negligible
-compared to the protocol cost. For very small inputs ($2^8$), the setup cost
-dominates and may lead to non-linear behavior.
-
-Compared with prior work [14,16], we expect:
-
--   **3--19× reduction in communication cost**
--   **9--140× reduction in running time**
-
-Note that communication cost is independent of the hardware platform,
-while running time may be affected by CPU frequency, cache size, and
-other hardware factors.
-
-------------------------------------------------------------------------
-
-### Prefix Fuzzy PSI
-
-For **fuzzy PSI with prefix optimization**, the running time and
-communication cost grow linearly with:
-
--   the input size ($n$)
--   the dimension ($d$)
--   **the logarithm of the distance threshold ($\log \delta$)**
-
-As with the basic construction, this behavior becomes observable when
-parameters are sufficiently large (e.g., $n > 2^{{12}}$). For smaller
-inputs ($2^8$), setup costs may dominate.
-
-In addition, the prefix optimization requires that **$\delta$ be a power
-of two**, as described in the paper.
-
-Compared with the state-of-the-art work of **Dang et al.**[16], our
-implementation achieves approximately:
-
--   **7--10× improvement in communication efficiency**
--   **13--38× improvement in computational efficiency**
-
-Note that communication cost is independent of the hardware platform, while
-running time may vary depending on CPU parameters such as frequency
-and cache size.
-
-
-### Note
-
-The running time of the baseline implementations can be quite large for certain parameter settings. 
-Evaluating all parameter combinations may take more than **1 day** to complete.
-
-We recommend selecting appropriate parameters for experiments according to the computational capability of your hardware platform.
-
-
 
 ## Citation
 
