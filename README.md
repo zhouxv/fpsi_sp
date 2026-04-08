@@ -111,6 +111,10 @@ Recommended Docker image:
 
 ------------------------------------------------------------------------
 
+## Acknowledgements
+Parts of this codebase (for prefix optimization) are adapted from [zhouxv/ourFuzzyPSI-C](https://github.com/zhouxv/ourFuzzyPSI-C)
+
+
 ## Citation
 
 If you make use of our work, please consider citing us:
