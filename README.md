@@ -120,8 +120,8 @@ Parts of this codebase (for prefix optimization) are adapted from [zhouxv/ourFuz
 If you make use of our work, please consider citing us:
 
 ```bibtex
-@INPROCEEDINGS {
-    author = { Xinpeng, Yang and Meng, Hao and Chenkai, Weng and Robert H., Deng and Yonggang, Wen and Tianwei, Zhang },
+@INPROCEEDINGS{
+    author = { Yang, Xinpeng and Hao, Meng and Weng, Chenkai and Deng, Robert H. and Wen, Yonggang and Zhang, Tianwei },
     booktitle = { 2026 IEEE Symposium on Security and Privacy (SP) },
     title = {{ Efficient Fuzzy Private Set Intersection from Secret-shared OPRF }},
     year = {2026},
